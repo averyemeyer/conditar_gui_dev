@@ -18,7 +18,7 @@
         <span><strong>conDitar</strong><small>STUDIO</small></span>
       </a>
       <div class="topbar-meta">
-        <span class="status-pill"><i></i> Interface preview</span>
+        <span class="status-pill"><i></i> Preview data</span>
         <button class="icon-button" id="theme-toggle" aria-label="Toggle contrast">◐</button>
       </div>
     </header>
@@ -26,32 +26,30 @@
     <main>
       <section class="hero">
         <div>
-          <p class="eyebrow">Structure-based molecular generation</p>
-          <h1>Design inside the pocket.</h1>
-          <p class="hero-copy">Configure a conDitar generation study, inspect candidates in context, and move promising chemistry into evaluation.</p>
+          <p class="eyebrow">conDitar molecular generation</p>
+          <h1>Generate and explore molecules.</h1>
+          <p class="hero-copy">Add a protein structure, choose a few settings, and review generated candidates in 3D.</p>
         </div>
-        <div class="hero-stats" aria-label="Loaded study summary">
-          <div><span id="hero-candidate-count">100</span><small>Candidates</small></div>
-          <div><span id="hero-input-mode">Ligand</span><small>Conditioning</small></div>
-          <div><span id="hero-status">Ready</span><small>Study state</small></div>
+        <div class="study-status" aria-label="Loaded study summary">
+          <i></i><strong id="hero-candidate-count">100</strong> candidates ·
+          <span id="hero-input-mode">Ligand</span> input ·
+          <span id="hero-status">Ready</span>
         </div>
       </section>
 
       <nav class="workflow-nav" aria-label="Workflow">
-        <button class="workflow-step active" data-section="setup"><span>01</span> Configure</button>
-        <button class="workflow-step" data-section="results"><span>02</span> Explore</button>
-        <button class="workflow-step" data-section="export"><span>03</span> Export</button>
+        <button class="workflow-step active" data-section="setup">Setup</button>
+        <button class="workflow-step" data-section="results">Results</button>
       </nav>
 
       <section id="setup-section" class="workspace-section">
         <div class="section-heading">
-          <div><p class="eyebrow">01 / Configure</p><h2>Generation setup</h2></div>
-          <p>Choose a conditioning mode and tune the sampling parameters. The run action is intentionally staged for backend integration.</p>
+          <div><p class="eyebrow">Step 1</p><h2>Set up a run</h2></div>
         </div>
 
         <div class="setup-grid">
           <article class="panel input-panel">
-            <div class="panel-heading"><div><span class="panel-index">A</span><h3>Input structures</h3></div><span class="required-label">PDB required</span></div>
+            <div class="panel-heading"><div><h3>Input structures</h3></div><span class="required-label">PDB required</span></div>
             <div class="mode-toggle" role="group" aria-label="Conditioning mode">
               <button class="active" data-mode="reference">Protein + reference ligand</button>
               <button data-mode="pocket">Pocket only</button>
@@ -78,10 +76,10 @@
           </article>
 
           <article class="panel parameter-panel">
-            <div class="panel-heading"><div><span class="panel-index">B</span><h3>Sampling parameters</h3></div><button class="text-button" id="reset-params">Reset defaults</button></div>
+            <div class="panel-heading"><div><h3>Run settings</h3></div><button class="text-button" id="reset-params">Reset</button></div>
             <div id="parameter-fields" class="parameter-fields"></div>
             <details class="advanced-options">
-              <summary>Paths and advanced options <span>4 settings</span></summary>
+              <summary>Advanced settings <span>8 options</span></summary>
               <div id="advanced-fields" class="parameter-fields advanced-grid"></div>
             </details>
           </article>
@@ -89,43 +87,26 @@
 
         <div class="run-bar">
           <div>
-            <span class="run-label">Command preview</span>
-            <code id="command-preview"></code>
+            <strong>Ready to generate</strong>
+            <span class="run-summary">Backend connection will activate this action.</span>
+            <code id="command-preview" hidden></code>
           </div>
-          <button class="primary-button" id="preview-run"><span>Run generation</span><b>→</b></button>
+          <button class="primary-button" id="preview-run"><span>Generate molecules</span><b>→</b></button>
         </div>
       </section>
 
       <section id="results-section" class="workspace-section">
         <div class="section-heading">
-          <div><p class="eyebrow">02 / Explore</p><h2>Candidate landscape</h2></div>
-          <p>Metrics are computed directly from each SDF structure in this frontend preview. No model score is fabricated.</p>
+          <div><p class="eyebrow">Step 2</p><h2>Explore results</h2></div>
+          <p>Select a candidate to view its structure and basic properties.</p>
         </div>
 
         <div class="metric-strip" id="metric-strip"></div>
 
-        <div class="analytics-grid">
-          <article class="panel chart-panel">
-            <div class="panel-heading"><div><span class="panel-index">C</span><h3>Property distribution</h3></div>
-              <select id="histogram-metric" class="compact-select">
-                <option value="molecularWeight">Molecular weight</option>
-                <option value="heavyAtoms">Heavy atoms</option>
-                <option value="heteroAtoms">Hetero atoms</option>
-                <option value="rings">Ring estimate</option>
-              </select>
-            </div>
-            <canvas id="histogram" height="220" aria-label="Property distribution chart"></canvas>
-          </article>
-          <article class="panel chart-panel">
-            <div class="panel-heading"><div><span class="panel-index">D</span><h3>Chemical space</h3></div><span class="chart-key"><i></i> Candidates</span></div>
-            <canvas id="scatterplot" height="220" aria-label="Molecular weight by heavy atom chart"></canvas>
-          </article>
-        </div>
-
         <div class="explorer-grid">
           <article class="panel result-list-panel">
             <div class="panel-heading list-heading">
-              <div><span class="panel-index">E</span><h3>Molecule library</h3></div>
+              <div><h3>Candidates</h3></div>
               <span id="visible-count">0 shown</span>
             </div>
             <div class="list-tools">
@@ -139,7 +120,7 @@
             </div>
             <div class="result-table-wrap">
               <table>
-                <thead><tr><th>Candidate</th><th>MW</th><th>Heavy</th><th>Rings</th></tr></thead>
+                <thead><tr><th>Candidate</th><th>MW</th><th>Rings</th></tr></thead>
                 <tbody id="result-table"></tbody>
               </table>
             </div>
@@ -160,37 +141,51 @@
             </div>
             <div class="viewer-footer">
               <div class="selected-metrics" id="selected-metrics"></div>
-              <div class="viewer-controls">
-                <label>Protein
-                  <select id="protein-style"><option value="cartoon">Cartoon</option><option value="line">Lines</option><option value="surface">Surface</option><option value="hidden">Hidden</option></select>
-                </label>
-                <label>Ligand
-                  <select id="ligand-style"><option value="stick">Sticks</option><option value="sphere">Spheres</option><option value="line">Lines</option></select>
-                </label>
-              </div>
+              <details class="viewer-options">
+                <summary>View options</summary>
+                <div class="viewer-controls">
+                  <label>Protein
+                    <select id="protein-style"><option value="cartoon">Cartoon</option><option value="line">Lines</option><option value="surface">Surface</option><option value="hidden">Hidden</option></select>
+                  </label>
+                  <label>Ligand
+                    <select id="ligand-style"><option value="stick">Sticks</option><option value="sphere">Spheres</option><option value="line">Lines</option></select>
+                  </label>
+                </div>
+              </details>
             </div>
           </article>
         </div>
+
+        <details class="analytics-details">
+          <summary>View dataset charts</summary>
+          <div class="analytics-grid">
+            <article class="panel chart-panel">
+              <div class="panel-heading"><div><h3>Property distribution</h3></div>
+                <select id="histogram-metric" class="compact-select">
+                  <option value="molecularWeight">Molecular weight</option>
+                  <option value="heavyAtoms">Heavy atoms</option>
+                  <option value="heteroAtoms">Hetero atoms</option>
+                  <option value="rings">Ring estimate</option>
+                </select>
+              </div>
+              <canvas id="histogram" height="220" aria-label="Property distribution chart"></canvas>
+            </article>
+            <article class="panel chart-panel">
+              <div class="panel-heading"><div><h3>Chemical space</h3></div><span class="chart-key"><i></i> Candidates</span></div>
+              <canvas id="scatterplot" height="220" aria-label="Molecular weight by heavy atom chart"></canvas>
+            </article>
+          </div>
+        </details>
       </section>
 
       <section id="export-section" class="workspace-section export-section">
-        <div class="section-heading">
-          <div><p class="eyebrow">03 / Export</p><h2>Take the study forward</h2></div>
-          <p>Download structures and a machine-readable evaluation table for downstream modeling and review.</p>
-        </div>
-        <div class="export-grid">
-          <article class="export-card featured">
-            <span class="export-number">01</span><div><h3>Complete study bundle</h3><p>All generated SDF files, input structures, run configuration, and computed metrics.</p></div>
-            <button class="primary-button" id="download-all">Download ZIP <b>↓</b></button>
-          </article>
-          <article class="export-card">
-            <span class="export-number">02</span><div><h3>Evaluation table</h3><p>Candidate-level structural descriptors as a CSV file.</p></div>
-            <button class="secondary-button" id="download-csv">Download CSV</button>
-          </article>
-          <article class="export-card">
-            <span class="export-number">03</span><div><h3>Run configuration</h3><p>Inputs and sampling options in a backend-ready JSON document.</p></div>
-            <button class="secondary-button" id="download-config">Download JSON</button>
-          </article>
+        <div class="download-bar">
+          <div><h2>Download results</h2><p>Save all structures and metrics, or choose a smaller export.</p></div>
+          <div class="download-actions">
+            <button class="primary-button" id="download-all">Download all <b>↓</b></button>
+            <button class="secondary-button" id="download-csv">Metrics CSV</button>
+            <button class="secondary-button" id="download-config">Run JSON</button>
+          </div>
         </div>
       </section>
     </main>

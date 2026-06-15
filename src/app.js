@@ -19,8 +19,12 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 function initialize() {
-  renderParameterFields(PARAMETERS, $("#parameter-fields"));
-  renderParameterFields(ADVANCED_PARAMETERS, $("#advanced-fields"));
+  const commonKeys = new Set(["num_samples", "pocket_radius"]);
+  renderParameterFields(PARAMETERS.filter((parameter) => commonKeys.has(parameter.key)), $("#parameter-fields"));
+  renderParameterFields(
+    [...PARAMETERS.filter((parameter) => !commonKeys.has(parameter.key)), ...ADVANCED_PARAMETERS],
+    $("#advanced-fields"),
+  );
   bindEvents();
   loadExample("4aua");
 }
@@ -60,6 +64,9 @@ function bindEvents() {
   $("#result-search").addEventListener("input", renderResultsTable);
   $("#result-sort").addEventListener("change", renderResultsTable);
   $("#histogram-metric").addEventListener("change", renderCharts);
+  $(".analytics-details").addEventListener("toggle", (event) => {
+    if (event.target.open) requestAnimationFrame(renderCharts);
+  });
   $("#protein-style").addEventListener("change", renderSelectedStructure);
   $("#ligand-style").addEventListener("change", renderSelectedStructure);
   $("#download-selected").addEventListener("click", downloadSelected);
@@ -155,7 +162,7 @@ function renderResultsTable() {
   $("#result-table").innerHTML = candidates.map((item) => `
     <tr data-index="${item.index}" class="${state.selected?.index === item.index ? "active" : ""}">
       <td>${item.id}<br><small>${item.formula}</small></td>
-      <td>${item.molecularWeight}</td><td>${item.heavyAtoms}</td><td>${item.rings}</td>
+      <td>${item.molecularWeight}</td><td>${item.rings}</td>
     </tr>`).join("");
   $$("#result-table tr").forEach((row) => row.addEventListener("click", () => {
     state.selected = state.study.candidates.find((item) => item.index === Number(row.dataset.index));
