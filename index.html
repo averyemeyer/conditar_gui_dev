@@ -103,6 +103,27 @@
 
         <div class="metric-strip" id="metric-strip"></div>
 
+        <details class="analytics-details">
+          <summary><span><strong>Dataset charts</strong><small>Property distributions and chemical space</small></span><b>Show charts</b></summary>
+          <div class="analytics-grid">
+            <article class="panel chart-panel">
+              <div class="panel-heading"><div><h3>Property distribution</h3></div>
+                <select id="histogram-metric" class="compact-select">
+                  <option value="molecularWeight">Molecular weight</option>
+                  <option value="heavyAtoms">Heavy atoms</option>
+                  <option value="heteroAtoms">Hetero atoms</option>
+                  <option value="rings">Ring estimate</option>
+                </select>
+              </div>
+              <canvas id="histogram" height="220" aria-label="Property distribution chart"></canvas>
+            </article>
+            <article class="panel chart-panel">
+              <div class="panel-heading"><div><h3>Chemical space</h3></div><span class="chart-key"><i></i> Candidates</span></div>
+              <canvas id="scatterplot" height="220" aria-label="Molecular weight by heavy atom chart"></canvas>
+            </article>
+          </div>
+        </details>
+
         <div class="explorer-grid">
           <article class="panel result-list-panel">
             <div class="panel-heading list-heading">
@@ -155,27 +176,6 @@
             </div>
           </article>
         </div>
-
-        <details class="analytics-details">
-          <summary>View dataset charts</summary>
-          <div class="analytics-grid">
-            <article class="panel chart-panel">
-              <div class="panel-heading"><div><h3>Property distribution</h3></div>
-                <select id="histogram-metric" class="compact-select">
-                  <option value="molecularWeight">Molecular weight</option>
-                  <option value="heavyAtoms">Heavy atoms</option>
-                  <option value="heteroAtoms">Hetero atoms</option>
-                  <option value="rings">Ring estimate</option>
-                </select>
-              </div>
-              <canvas id="histogram" height="220" aria-label="Property distribution chart"></canvas>
-            </article>
-            <article class="panel chart-panel">
-              <div class="panel-heading"><div><h3>Chemical space</h3></div><span class="chart-key"><i></i> Candidates</span></div>
-              <canvas id="scatterplot" height="220" aria-label="Molecular weight by heavy atom chart"></canvas>
-            </article>
-          </div>
-        </details>
       </section>
 
       <section id="export-section" class="workspace-section export-section">
