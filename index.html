@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="conDitar molecular generation research interface">
+  <title>conDitar Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="conDitar Studio home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><strong>conDitar</strong><small>STUDIO</small></span>
+      </a>
+      <div class="topbar-meta">
+        <span class="status-pill"><i></i> Interface preview</span>
+        <button class="icon-button" id="theme-toggle" aria-label="Toggle contrast">◐</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Structure-based molecular generation</p>
+          <h1>Design inside the pocket.</h1>
+          <p class="hero-copy">Configure a conDitar generation study, inspect candidates in context, and move promising chemistry into evaluation.</p>
+        </div>
+        <div class="hero-stats" aria-label="Loaded study summary">
+          <div><span id="hero-candidate-count">100</span><small>Candidates</small></div>
+          <div><span id="hero-input-mode">Ligand</span><small>Conditioning</small></div>
+          <div><span id="hero-status">Ready</span><small>Study state</small></div>
+        </div>
+      </section>
+
+      <nav class="workflow-nav" aria-label="Workflow">
+        <button class="workflow-step active" data-section="setup"><span>01</span> Configure</button>
+        <button class="workflow-step" data-section="results"><span>02</span> Explore</button>
+        <button class="workflow-step" data-section="export"><span>03</span> Export</button>
+      </nav>
+
+      <section id="setup-section" class="workspace-section">
+        <div class="section-heading">
+          <div><p class="eyebrow">01 / Configure</p><h2>Generation setup</h2></div>
+          <p>Choose a conditioning mode and tune the sampling parameters. The run action is intentionally staged for backend integration.</p>
+        </div>
+
+        <div class="setup-grid">
+          <article class="panel input-panel">
+            <div class="panel-heading"><div><span class="panel-index">A</span><h3>Input structures</h3></div><span class="required-label">PDB required</span></div>
+            <div class="mode-toggle" role="group" aria-label="Conditioning mode">
+              <button class="active" data-mode="reference">Protein + reference ligand</button>
+              <button data-mode="pocket">Pocket only</button>
+            </div>
+            <label class="field-label" for="example-select">Example dataset</label>
+            <select id="example-select">
+              <option value="4aua">4AUA · protein + ligand</option>
+              <option value="xxxx">XXXX · prepared pocket</option>
+              <option value="custom">Custom upload</option>
+            </select>
+            <div class="dropzone" id="pdb-dropzone">
+              <input id="pdb-input" type="file" accept=".pdb">
+              <div class="file-icon">PDB</div>
+              <div><strong id="pdb-name">4aua_protein.pdb</strong><span id="pdb-detail">2,051 records · bundled example</span></div>
+              <button class="text-button" type="button">Replace</button>
+            </div>
+            <div class="dropzone" id="sdf-dropzone">
+              <input id="sdf-input" type="file" accept=".sdf">
+              <div class="file-icon accent">SDF</div>
+              <div><strong id="sdf-name">4aua_ligand.sdf</strong><span id="sdf-detail">Reference ligand · bundled example</span></div>
+              <button class="text-button" type="button">Replace</button>
+            </div>
+            <p class="field-note" id="mode-note">The reference ligand defines the generation center. Pocket radius controls the surrounding protein context.</p>
+          </article>
+
+          <article class="panel parameter-panel">
+            <div class="panel-heading"><div><span class="panel-index">B</span><h3>Sampling parameters</h3></div><button class="text-button" id="reset-params">Reset defaults</button></div>
+            <div id="parameter-fields" class="parameter-fields"></div>
+            <details class="advanced-options">
+              <summary>Paths and advanced options <span>4 settings</span></summary>
+              <div id="advanced-fields" class="parameter-fields advanced-grid"></div>
+            </details>
+          </article>
+        </div>
+
+        <div class="run-bar">
+          <div>
+            <span class="run-label">Command preview</span>
+            <code id="command-preview"></code>
+          </div>
+          <button class="primary-button" id="preview-run"><span>Run generation</span><b>→</b></button>
+        </div>
+      </section>
+
+      <section id="results-section" class="workspace-section">
+        <div class="section-heading">
+          <div><p class="eyebrow">02 / Explore</p><h2>Candidate landscape</h2></div>
+          <p>Metrics are computed directly from each SDF structure in this frontend preview. No model score is fabricated.</p>
+        </div>
+
+        <div class="metric-strip" id="metric-strip"></div>
+
+        <div class="analytics-grid">
+          <article class="panel chart-panel">
+            <div class="panel-heading"><div><span class="panel-index">C</span><h3>Property distribution</h3></div>
+              <select id="histogram-metric" class="compact-select">
+                <option value="molecularWeight">Molecular weight</option>
+                <option value="heavyAtoms">Heavy atoms</option>
+                <option value="heteroAtoms">Hetero atoms</option>
+                <option value="rings">Ring estimate</option>
+              </select>
+            </div>
+            <canvas id="histogram" height="220" aria-label="Property distribution chart"></canvas>
+          </article>
+          <article class="panel chart-panel">
+            <div class="panel-heading"><div><span class="panel-index">D</span><h3>Chemical space</h3></div><span class="chart-key"><i></i> Candidates</span></div>
+            <canvas id="scatterplot" height="220" aria-label="Molecular weight by heavy atom chart"></canvas>
+          </article>
+        </div>
+
+        <div class="explorer-grid">
+          <article class="panel result-list-panel">
+            <div class="panel-heading list-heading">
+              <div><span class="panel-index">E</span><h3>Molecule library</h3></div>
+              <span id="visible-count">0 shown</span>
+            </div>
+            <div class="list-tools">
+              <label class="search-box"><span>⌕</span><input id="result-search" type="search" placeholder="Search candidate ID"></label>
+              <select id="result-sort" class="compact-select">
+                <option value="index">Generation order</option>
+                <option value="molecularWeight">Molecular weight</option>
+                <option value="heavyAtoms">Heavy atoms</option>
+                <option value="rings">Ring estimate</option>
+              </select>
+            </div>
+            <div class="result-table-wrap">
+              <table>
+                <thead><tr><th>Candidate</th><th>MW</th><th>Heavy</th><th>Rings</th></tr></thead>
+                <tbody id="result-table"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel viewer-panel">
+            <div class="viewer-header">
+              <div><p class="eyebrow">Selected candidate</p><h3 id="selected-name">Candidate 000</h3></div>
+              <div class="viewer-actions">
+                <div class="view-toggle"><button class="active" data-view="3d">3D</button><button data-view="2d">2D</button></div>
+                <button class="icon-button" id="download-selected" aria-label="Download selected SDF">↓</button>
+              </div>
+            </div>
+            <div class="viewer-stage">
+              <div id="viewer-3d"></div>
+              <div id="viewer-2d" hidden></div>
+              <div class="viewer-loading" id="viewer-loading"><span></span>Loading structure</div>
+            </div>
+            <div class="viewer-footer">
+              <div class="selected-metrics" id="selected-metrics"></div>
+              <div class="viewer-controls">
+                <label>Protein
+                  <select id="protein-style"><option value="cartoon">Cartoon</option><option value="line">Lines</option><option value="surface">Surface</option><option value="hidden">Hidden</option></select>
+                </label>
+                <label>Ligand
+                  <select id="ligand-style"><option value="stick">Sticks</option><option value="sphere">Spheres</option><option value="line">Lines</option></select>
+                </label>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="export-section" class="workspace-section export-section">
+        <div class="section-heading">
+          <div><p class="eyebrow">03 / Export</p><h2>Take the study forward</h2></div>
+          <p>Download structures and a machine-readable evaluation table for downstream modeling and review.</p>
+        </div>
+        <div class="export-grid">
+          <article class="export-card featured">
+            <span class="export-number">01</span><div><h3>Complete study bundle</h3><p>All generated SDF files, input structures, run configuration, and computed metrics.</p></div>
+            <button class="primary-button" id="download-all">Download ZIP <b>↓</b></button>
+          </article>
+          <article class="export-card">
+            <span class="export-number">02</span><div><h3>Evaluation table</h3><p>Candidate-level structural descriptors as a CSV file.</p></div>
+            <button class="secondary-button" id="download-csv">Download CSV</button>
+          </article>
+          <article class="export-card">
+            <span class="export-number">03</span><div><h3>Run configuration</h3><p>Inputs and sampling options in a backend-ready JSON document.</p></div>
+            <button class="secondary-button" id="download-config">Download JSON</button>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer><span>conDitar Studio · research interface preview</span><span>Backend connection pending</span></footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="https://cdn.jsdelivr.net/npm/3dmol@2.4.2/build/3Dmol-min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>

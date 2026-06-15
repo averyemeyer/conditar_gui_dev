@@ -1,0 +1,51 @@
+import { EXAMPLES } from "./config.js";
+import { candidateId, parseSdf } from "./sdf.js";
+
+export class ExampleDataService {
+  async loadStudy(exampleId, onProgress = () => {}) {
+    const example = EXAMPLES[exampleId];
+    if (!example) throw new Error(`Unknown example: ${exampleId}`);
+
+    const [pdbText, referenceSdf] = await Promise.all([
+      fetchText(example.pdb),
+      example.sdf ? fetchText(example.sdf) : Promise.resolve(null),
+    ]);
+
+    let loaded = 0;
+    const candidates = (await Promise.all(Array.from({ length: example.count }, async (_, index) => {
+      const preferred = `${example.outputRoot}/${example.outputStem}${index}.sdf`;
+      const fallback = example.outputFallbackStem
+        ? `${example.outputRoot}/${example.outputFallbackStem}${index}.sdf`
+        : null;
+      let path = preferred;
+      let text = await fetchText(preferred, false);
+      if (!text && fallback) {
+        path = fallback;
+        text = await fetchText(fallback, false);
+      }
+      loaded += 1;
+      onProgress(loaded, example.count);
+      if (!text) return null;
+      const molecule = parseSdf(text, path.split("/").pop());
+      return { ...molecule, index, id: candidateId(index), path };
+    }))).filter(Boolean).sort((a, b) => a.index - b.index);
+
+    return { example, pdbText, referenceSdf, candidates };
+  }
+
+  async loadUploadedOutputs(files) {
+    return Promise.all([...files].map(async (file, index) => {
+      const text = await file.text();
+      return { ...parseSdf(text, file.name), index, id: candidateId(index), path: file.name };
+    }));
+  }
+}
+
+async function fetchText(path, required = true) {
+  const response = await fetch(path);
+  if (!response.ok) {
+    if (required) throw new Error(`Unable to load ${path}`);
+    return null;
+  }
+  return response.text();
+}
