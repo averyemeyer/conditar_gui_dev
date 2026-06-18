@@ -124,9 +124,3 @@ conda env update -f environment.yml --prune
 Replace or extend `ExampleDataService` in `src/data-service.js` with API methods
 for job submission, status polling, result manifests, and evaluation data. The
 UI state and viewers are intentionally separate from this adapter.
-
-## Data and licensing
-
-The repository includes conDitar example data whose original licensing terms
-remain applicable. Review those terms before publishing or redistributing data.
-Keep the GitHub repository private unless redistribution has been approved.
