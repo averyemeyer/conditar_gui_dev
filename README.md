@@ -57,6 +57,17 @@ Override that path with `CONDITAR_SIF` when needed:
 CONDITAR_SIF=/path/to/conditar-dev.sif python3 serve.py --open
 ```
 
+The backend looks for `apptainer` first and then `singularity`. If the executable
+is installed somewhere unusual, set:
+
+```bash
+APPTAINER_BIN=/path/to/apptainer python3 serve.py --open
+```
+
+On macOS, Apptainer usually needs to run inside a Linux VM or another Linux
+environment. Installing it into a Python/conda environment is not enough because
+the backend launches a system container runtime executable.
+
 The **Generate molecules** button submits a local CPU background job. Job inputs,
 logs, metadata, and outputs are written under `job_data/jobs/`, which is ignored
 by git. If `sendmail` is available on the machine and an email address is

@@ -53,7 +53,11 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
         parts = self.path.split("?")[0].strip("/").split("/")
         try:
             if parts == ["api", "health"]:
-                self._send_json({"ok": True, "sif": str(JOB_MANAGER.sif_path)})
+                self._send_json({
+                    "ok": True,
+                    "sif": str(JOB_MANAGER.sif_path),
+                    "container_runtime": JOB_MANAGER.container_runtime,
+                })
             elif parts == ["api", "jobs"]:
                 self._send_json({"jobs": JOB_MANAGER.list_jobs()})
             elif len(parts) == 3 and parts[:2] == ["api", "jobs"]:

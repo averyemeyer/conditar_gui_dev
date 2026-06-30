@@ -44,7 +44,7 @@ class LocalJobManager:
             "CONDITAR_SIF",
             project_root.parent / "conDitar-dev" / "conditar-dev.sif",
         )).expanduser()
-        self.apptainer = os.environ.get("APPTAINER_BIN", "apptainer")
+        self.container_runtime = self._resolve_container_runtime()
         self.default_tmp = Path(os.environ.get("CONDITAR_TMP", "/tmp/conditar-gui"))
         self._queue: queue.Queue[str] = queue.Queue()
         self._processes: dict[str, subprocess.Popen] = {}
@@ -157,8 +157,13 @@ class LocalJobManager:
     def _build_command(self, paths: JobPaths, pdb_path: Path, sdf_path: Path | None, parameters: dict) -> list[str]:
         if not self.sif_path.exists():
             raise ValueError(f"Container image not found: {self.sif_path}")
+        if not self.container_runtime:
+            raise ValueError(
+                "Apptainer/Singularity executable not found. Install a SIF runtime "
+                "or set APPTAINER_BIN=/path/to/apptainer."
+            )
         command = [
-            self.apptainer,
+            self.container_runtime,
             "run",
             str(self.sif_path),
             "--pdb",
@@ -181,6 +186,12 @@ class LocalJobManager:
             if value not in (None, ""):
                 command.extend([cli_key, str(value)])
         return command
+
+    def _resolve_container_runtime(self) -> str | None:
+        configured = os.environ.get("APPTAINER_BIN")
+        if configured:
+            return configured if shutil.which(configured) else None
+        return shutil.which("apptainer") or shutil.which("singularity")
 
     def _paths(self, job_id: str) -> JobPaths:
         root = self.job_root / job_id
