@@ -48,6 +48,7 @@ h1 { margin: 0; max-width: 650px; font-size: clamp(38px, 4.7vw, 58px); line-heig
 .workflow-step { padding: 0 22px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 12px; }
 .workflow-step.active { color: var(--accent-dark); border-color: var(--accent); font-weight: 700; }
 .workspace-section { padding: 54px 48px; border-bottom: 1px solid var(--line); scroll-margin-top: 128px; }
+.workspace-section[hidden] { display: none; }
 .section-heading { display: flex; justify-content: space-between; align-items: end; margin-bottom: 34px; }
 .section-heading h2 { margin: 0; font-size: 28px; letter-spacing: -.04em; }
 .section-heading > p { max-width: 530px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
@@ -93,6 +94,8 @@ select, input[type="text"], input[type="number"], input[type="search"] { border:
 .primary-button { border: 1px solid #65a894; background: var(--accent); color: white; }
 .primary-button b { margin-left: 18px; }
 .secondary-button { border: 1px solid var(--line); background: white; color: var(--ink); }
+.primary-button:disabled, .secondary-button:disabled { cursor: not-allowed; opacity: .45; }
+.compact-action { min-height: 30px; padding: 0 10px; font-size: 10px; }
 .job-panel { margin-top: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .job-controls { max-width: 360px; margin-bottom: 14px; }
 .job-controls input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
@@ -101,6 +104,15 @@ select, input[type="text"], input[type="number"], input[type="search"] { border:
 .job-status-grid span { display: block; color: var(--muted); font-size: 9px; text-transform: uppercase; }
 .job-status-grid strong { display: block; margin-top: 4px; font: 500 12px "DM Mono"; overflow-wrap: anywhere; }
 .job-log { max-height: 170px; margin: 14px 0 0; padding: 12px; overflow: auto; border-radius: 7px; background: #15221f; color: #d8e4df; font: 10px/1.55 "DM Mono"; white-space: pre-wrap; }
+.jobs-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr); gap: 16px; }
+.jobs-table-panel, .job-detail-panel { padding: 20px; }
+.job-table-wrap { overflow: auto; max-height: 520px; border-top: 1px solid var(--line); }
+.job-table-wrap td:first-child { max-width: 210px; overflow-wrap: anywhere; }
+.status-badge { display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border-radius: 999px; background: #edf1ef; color: var(--muted); font: 500 10px "DM Mono"; text-transform: uppercase; }
+.status-badge[data-status="queued"] { background: #eef2f6; color: #526777; }
+.status-badge[data-status="running"] { background: #e4f0eb; color: var(--accent-dark); }
+.status-badge[data-status="completed"] { background: #e2f2e8; color: #346e49; }
+.status-badge[data-status="failed"], .status-badge[data-status="canceled"] { background: #f7e8e1; color: #8b4b33; }
 .metric-strip { display: grid; grid-template-columns: repeat(4, 1fr); margin-bottom: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); overflow: hidden; box-shadow: none; }
 .metric-card { padding: 16px 18px; border-right: 1px solid var(--line); }
 .metric-card:last-child { border: 0; }
@@ -181,7 +193,7 @@ body.high-contrast { --bg: #edf1ef; --paper: #fff; --ink: #07110f; --muted: #455
 @media (max-width: 980px) {
   .hero { align-items: start; flex-direction: column; gap: 45px; }
   .study-status { align-self: flex-start; }
-  .setup-grid, .explorer-grid, .export-grid { grid-template-columns: 1fr; }
+  .setup-grid, .explorer-grid, .export-grid, .jobs-grid { grid-template-columns: 1fr; }
   .parameter-fields { grid-template-columns: repeat(2, 1fr); }
   .result-table-wrap { max-height: 430px; }
 }

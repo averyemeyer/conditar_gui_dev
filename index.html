@@ -39,7 +39,9 @@
 
       <nav class="workflow-nav" aria-label="Workflow">
         <button class="workflow-step active" data-section="setup">Setup</button>
+        <button class="workflow-step" data-section="jobs">Jobs</button>
         <button class="workflow-step" data-section="results">Results</button>
+        <button class="workflow-step" data-section="export">Export</button>
       </nav>
 
       <section id="setup-section" class="workspace-section">
@@ -108,10 +110,42 @@
         </div>
       </section>
 
-      <section id="results-section" class="workspace-section">
+      <section id="jobs-section" class="workspace-section" hidden>
         <div class="section-heading">
-          <div><p class="eyebrow">Step 2</p><h2>Explore results</h2></div>
-          <p>Select a candidate to view its structure and basic properties.</p>
+          <div><p class="eyebrow">Step 2</p><h2>Job queue</h2></div>
+          <p>Track queued, running, and completed local CPU jobs. Completed jobs can be loaded into the Results tab.</p>
+        </div>
+
+        <div class="jobs-grid">
+          <article class="panel jobs-table-panel">
+            <div class="panel-heading list-heading">
+              <div><h3>Runs</h3></div>
+              <button class="secondary-button compact-action" id="refresh-jobs">Refresh</button>
+            </div>
+            <div class="job-table-wrap">
+              <table>
+                <thead><tr><th>Job</th><th>Status</th><th>Input</th><th>Created</th><th>Action</th></tr></thead>
+                <tbody id="jobs-table"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel job-detail-panel">
+            <div class="panel-heading"><div><h3>Selected job</h3></div><span id="job-detail-status" class="status-badge">None</span></div>
+            <div class="job-status-grid">
+              <div><span>Job ID</span><strong id="job-detail-id">None</strong></div>
+              <div><span>Runtime target</span><strong id="job-detail-target">Local CPU</strong></div>
+              <div><span>Started</span><strong id="job-detail-started">-</strong></div>
+            </div>
+            <pre id="job-detail-log" class="job-log">Select a job to view logs.</pre>
+          </article>
+        </div>
+      </section>
+
+      <section id="results-section" class="workspace-section" hidden>
+        <div class="section-heading">
+          <div><p class="eyebrow">Step 3</p><h2>Explore results</h2></div>
+          <p id="results-source">Preview example results are loaded. Select a completed job from Jobs to review generated outputs.</p>
         </div>
 
         <div class="metric-strip" id="metric-strip"></div>
@@ -191,7 +225,7 @@
         </div>
       </section>
 
-      <section id="export-section" class="workspace-section export-section">
+      <section id="export-section" class="workspace-section export-section" hidden>
         <div class="download-bar">
           <div><h2>Download results</h2><p>Save all structures and metrics, or choose a smaller export.</p></div>
           <div class="download-actions">

@@ -14,7 +14,11 @@ const state = {
   customPdb: null,
   customSdf: null,
   currentJob: null,
+  selectedJob: null,
+  jobs: [],
   jobPollTimer: null,
+  activeTab: "setup",
+  resultSource: "example",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -29,6 +33,8 @@ function initialize() {
   );
   bindEvents();
   loadExample("4aua");
+  refreshJobs(false);
+  setActiveTab("setup");
 }
 
 function renderParameterFields(parameters, container) {
@@ -44,17 +50,14 @@ function bindEvents() {
   $("#example-select").addEventListener("change", (event) => {
     if (event.target.value === "custom") {
       state.exampleId = "custom";
-      showToast("Upload custom input structures. Example results remain visible until backend integration.");
+      showToast("Upload custom input structures, then submit a local CPU job.");
       return;
     }
     loadExample(event.target.value);
   });
   $$(".mode-toggle button").forEach((button) => button.addEventListener("click", () => setMode(button.dataset.mode)));
   $$(".view-toggle button").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
-  $$(".workflow-step").forEach((button) => button.addEventListener("click", () => {
-    $$(".workflow-step").forEach((item) => item.classList.toggle("active", item === button));
-    $(`#${button.dataset.section}-section`).scrollIntoView({ behavior: "smooth" });
-  }));
+  $$(".workflow-step").forEach((button) => button.addEventListener("click", () => setActiveTab(button.dataset.section)));
   [...PARAMETERS, ...ADVANCED_PARAMETERS].forEach((parameter) => {
     $(`#param-${parameter.key}`).addEventListener("input", (event) => {
       state.parameters[parameter.key] = parameter.type === "number" ? Number(event.target.value) : event.target.value;
@@ -63,6 +66,7 @@ function bindEvents() {
   });
   $("#reset-params").addEventListener("click", resetParameters);
   $("#preview-run").addEventListener("click", submitGenerationJob);
+  $("#refresh-jobs").addEventListener("click", () => refreshJobs(true));
   $("#result-search").addEventListener("input", renderResultsTable);
   $("#result-sort").addEventListener("change", renderResultsTable);
   $("#histogram-metric").addEventListener("change", renderCharts);
@@ -81,6 +85,21 @@ function bindEvents() {
   window.addEventListener("resize", debounce(renderCharts, 120));
 }
 
+async function setActiveTab(tab) {
+  state.activeTab = tab;
+  $$(".workflow-step").forEach((button) => button.classList.toggle("active", button.dataset.section === tab));
+  $$(".workspace-section").forEach((section) => {
+    section.hidden = section.id !== `${tab}-section`;
+  });
+  if (tab === "jobs") {
+    await refreshJobs(false);
+  }
+  if (tab === "results") {
+    renderCharts();
+    renderSelectedStructure();
+  }
+}
+
 async function loadExample(exampleId) {
   setLoading(true);
   state.exampleId = exampleId;
@@ -93,6 +112,8 @@ async function loadExample(exampleId) {
       $("#hero-status").textContent = `${Math.round((loaded / total) * 100)}%`;
     });
     state.selected = state.study.candidates[0] || null;
+    state.resultSource = "example";
+    state.selectedJob = null;
     $("#hero-candidate-count").textContent = state.study.candidates.length;
     $("#hero-status").textContent = "Ready";
     renderStudy();
@@ -134,6 +155,7 @@ function renderStudy() {
   renderResultsTable();
   renderCharts();
   renderSelectedStructure();
+  updateResultsSource();
   updateCommand();
 }
 
@@ -149,7 +171,11 @@ async function submitGenerationJob() {
     const payload = buildJobPayload();
     const job = await service.submitJob(payload);
     state.currentJob = job;
+    state.selectedJob = job;
     updateJobPanel(job, "Job queued.");
+    updateJobDetail(job, "Job queued.");
+    await refreshJobs(false);
+    setActiveTab("jobs");
     showToast("Local CPU job queued.");
     pollJob(job.id);
   } catch (error) {
@@ -195,8 +221,12 @@ async function pollJob(jobId) {
       service.getJobLogs(jobId),
     ]);
     state.currentJob = job;
+    state.selectedJob = job;
     updateJobPanel(job, logs.stdout || logs.stderr || "Waiting for job output.");
+    updateJobDetail(job, logs.stdout || logs.stderr || "Waiting for job output.");
+    renderJobsTable();
     if (job.status === "completed") {
+      await refreshJobs(false);
       await loadCompletedJob(job);
       return;
     }
@@ -204,7 +234,7 @@ async function pollJob(jobId) {
       showToast(job.error_message || `Job ${job.status}.`);
       return;
     }
-    state.jobPollTimer = setTimeout(() => pollJob(jobId), 3000);
+    state.jobPollTimer = setTimeout(() => pollJob(jobId), 5000);
   } catch (error) {
     updateJobPanel(state.currentJob, error.message);
     state.jobPollTimer = setTimeout(() => pollJob(jobId), 5000);
@@ -226,10 +256,14 @@ async function loadCompletedJob(job) {
     },
     candidates,
   };
+  state.currentJob = job;
+  state.selectedJob = job;
+  state.resultSource = "job";
   state.selected = candidates[0];
   $("#hero-candidate-count").textContent = candidates.length;
   $("#hero-status").textContent = "Completed";
   renderStudy();
+  setActiveTab("results");
   showToast(`Job completed with ${candidates.length} result${candidates.length === 1 ? "" : "s"}.`);
 }
 
@@ -237,6 +271,60 @@ function updateJobPanel(job, logText) {
   $("#job-status").textContent = job?.status || "Idle";
   $("#job-id").textContent = job?.id || "None";
   $("#job-log").textContent = trimLog(logText || "No job submitted.");
+}
+
+function updateJobDetail(job, logText) {
+  $("#job-detail-status").textContent = job?.status || "None";
+  $("#job-detail-status").dataset.status = job?.status || "none";
+  $("#job-detail-id").textContent = job?.id || "None";
+  $("#job-detail-target").textContent = targetLabel(job);
+  $("#job-detail-started").textContent = formatDate(job?.started_at || job?.created_at);
+  $("#job-detail-log").textContent = trimLog(logText || "Select a job to view logs.");
+}
+
+async function refreshJobs(showMessage = false) {
+  try {
+    state.jobs = await service.listJobs();
+    renderJobsTable();
+    if (showMessage) showToast(`Loaded ${state.jobs.length} job${state.jobs.length === 1 ? "" : "s"}.`);
+  } catch (error) {
+    if (showMessage) showToast(error.message);
+  }
+}
+
+function renderJobsTable() {
+  const jobs = [...state.jobs].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  $("#jobs-table").innerHTML = jobs.length ? jobs.map((job) => `
+    <tr data-job-id="${job.id}" class="${state.selectedJob?.id === job.id ? "active" : ""}">
+      <td>${job.id}<br><small>${job.mode || "run"}</small></td>
+      <td><span class="status-badge" data-status="${job.status}">${job.status}</span></td>
+      <td>${targetLabel(job)}<br><small>${job.example_id || "custom"}</small></td>
+      <td>${formatDate(job.created_at)}</td>
+      <td><button class="secondary-button compact-action load-job-results" ${job.status === "completed" ? "" : "disabled"}>Results</button></td>
+    </tr>`).join("") : `<tr><td colspan="5">No jobs yet.</td></tr>`;
+
+  $$("#jobs-table tr[data-job-id]").forEach((row) => row.addEventListener("click", async (event) => {
+    const job = state.jobs.find((item) => item.id === row.dataset.jobId);
+    if (!job) return;
+    state.selectedJob = job;
+    renderJobsTable();
+    const logs = await service.getJobLogs(job.id).catch(() => ({ stdout: "", stderr: "Unable to load logs." }));
+    updateJobDetail(job, logs.stdout || logs.stderr || "No logs yet.");
+    if (event.target.closest(".load-job-results")) {
+      await loadSelectedJobResults(job.id);
+    }
+  }));
+}
+
+async function loadSelectedJobResults(jobId) {
+  const job = await service.getJob(jobId);
+  state.selectedJob = job;
+  updateJobDetail(job, "Loading results...");
+  if (job.status !== "completed") {
+    showToast("Only completed jobs have results to load.");
+    return;
+  }
+  await loadCompletedJob(job);
 }
 
 function trimLog(text) {
@@ -276,12 +364,12 @@ function renderResultsTable() {
     state.selected = state.study.candidates.find((item) => item.index === Number(row.dataset.index));
     renderResultsTable();
     renderSelectedStructure();
-    drawScatter($("#scatterplot"), state.study.candidates, state.selected.index);
+    renderCharts();
   }));
 }
 
 function renderCharts() {
-  if (!state.study) return;
+  if (!state.study || state.activeTab !== "results" || !$(".analytics-details").open) return;
   const metric = $("#histogram-metric").value;
   const label = $("#histogram-metric").selectedOptions[0].textContent;
   drawHistogram($("#histogram"), state.study.candidates.map((item) => item[metric]), label);
@@ -290,7 +378,7 @@ function renderCharts() {
 
 function renderSelectedStructure() {
   const molecule = state.selected;
-  if (!molecule || !state.study) return;
+  if (!molecule || !state.study || state.activeTab !== "results") return;
   $("#selected-name").textContent = molecule.id;
   $("#selected-metrics").innerHTML = [
     ["Formula", molecule.formula],
@@ -311,6 +399,29 @@ function setView(view) {
   $$(".view-toggle button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   $("#viewer-3d").hidden = view !== "3d";
   $("#viewer-2d").hidden = view !== "2d";
+}
+
+function updateResultsSource() {
+  $("#results-source").textContent = state.resultSource === "job" && state.selectedJob
+    ? `Loaded generated outputs from job ${state.selectedJob.id}.`
+    : "Preview example results are loaded. Select a completed job from Jobs to review generated outputs.";
+}
+
+function targetLabel(job) {
+  if (!job) return "Local CPU";
+  return job.target === "local_cpu" ? "Local CPU" : (job.target || "Local CPU");
+}
+
+function formatDate(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function updateCommand() {
@@ -405,7 +516,7 @@ function buildConfiguration() {
   return {
     interface_version: "0.1.0",
     backend_connected: true,
-    job_id: state.currentJob?.id || null,
+    job_id: state.resultSource === "job" ? state.currentJob?.id || null : null,
     conditioning_mode: state.mode,
     inputs: {
       pdb_filename: state.customPdb?.name || example?.pdb || null,
