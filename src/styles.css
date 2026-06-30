@@ -93,6 +93,14 @@ select, input[type="text"], input[type="number"], input[type="search"] { border:
 .primary-button { border: 1px solid #65a894; background: var(--accent); color: white; }
 .primary-button b { margin-left: 18px; }
 .secondary-button { border: 1px solid var(--line); background: white; color: var(--ink); }
+.job-panel { margin-top: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.job-controls { max-width: 360px; margin-bottom: 14px; }
+.job-controls input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
+.job-status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.job-status-grid div { padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: #f8faf9; }
+.job-status-grid span { display: block; color: var(--muted); font-size: 9px; text-transform: uppercase; }
+.job-status-grid strong { display: block; margin-top: 4px; font: 500 12px "DM Mono"; overflow-wrap: anywhere; }
+.job-log { max-height: 170px; margin: 14px 0 0; padding: 12px; overflow: auto; border-radius: 7px; background: #15221f; color: #d8e4df; font: 10px/1.55 "DM Mono"; white-space: pre-wrap; }
 .metric-strip { display: grid; grid-template-columns: repeat(4, 1fr); margin-bottom: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); overflow: hidden; box-shadow: none; }
 .metric-card { padding: 16px 18px; border-right: 1px solid var(--line); }
 .metric-card:last-child { border: 0; }
@@ -190,6 +198,7 @@ body.high-contrast { --bg: #edf1ef; --paper: #fff; --ink: #07110f; --muted: #455
   .metric-card:nth-child(2) { border-right: 0; }
   .metric-card:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
   .run-bar, .viewer-footer { align-items: stretch; flex-direction: column; }
+  .job-status-grid { grid-template-columns: 1fr; }
   .download-bar { align-items: flex-start; flex-direction: column; }
   .download-actions { width: 100%; flex-wrap: wrap; }
   .selected-metrics { justify-content: space-between; }

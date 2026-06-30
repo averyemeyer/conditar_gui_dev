@@ -39,6 +39,39 @@ export class ExampleDataService {
       return { ...parseSdf(text, file.name), index, id: candidateId(index), path: file.name };
     }));
   }
+
+  async submitJob(payload) {
+    const response = await fetchJson("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return response.job;
+  }
+
+  async listJobs() {
+    const response = await fetchJson("/api/jobs");
+    return response.jobs;
+  }
+
+  async getJob(jobId) {
+    const response = await fetchJson(`/api/jobs/${jobId}`);
+    return response.job;
+  }
+
+  async getJobLogs(jobId) {
+    return fetchJson(`/api/jobs/${jobId}/logs`);
+  }
+
+  async loadJobResults(job) {
+    const response = await fetchJson(`/api/jobs/${job.id}/results`);
+    return response.files.map((file, index) => ({
+      ...parseSdf(file.text, file.name),
+      index,
+      id: candidateId(index),
+      path: file.relative_path,
+    }));
+  }
 }
 
 async function fetchText(path, required = true) {
@@ -48,4 +81,11 @@ async function fetchText(path, required = true) {
     return null;
   }
   return response.text();
+}
+
+async function fetchJson(path, options = {}) {
+  const response = await fetch(path, options);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || `Request failed: ${path}`);
+  return body;
 }

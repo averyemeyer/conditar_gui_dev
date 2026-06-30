@@ -13,6 +13,8 @@ const state = {
   parameters: Object.fromEntries([...PARAMETERS, ...ADVANCED_PARAMETERS].map((item) => [item.key, item.value])),
   customPdb: null,
   customSdf: null,
+  currentJob: null,
+  jobPollTimer: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -60,7 +62,7 @@ function bindEvents() {
     });
   });
   $("#reset-params").addEventListener("click", resetParameters);
-  $("#preview-run").addEventListener("click", () => showToast("The interface is ready for the conDitar backend adapter. No generation job was started."));
+  $("#preview-run").addEventListener("click", submitGenerationJob);
   $("#result-search").addEventListener("input", renderResultsTable);
   $("#result-sort").addEventListener("change", renderResultsTable);
   $("#histogram-metric").addEventListener("change", renderCharts);
@@ -133,6 +135,112 @@ function renderStudy() {
   renderCharts();
   renderSelectedStructure();
   updateCommand();
+}
+
+async function submitGenerationJob() {
+  if (!state.study && !state.customPdb) {
+    showToast("Load or upload a PDB before submitting a job.");
+    return;
+  }
+  const button = $("#preview-run");
+  button.disabled = true;
+  button.querySelector("span").textContent = "Submitting";
+  try {
+    const payload = buildJobPayload();
+    const job = await service.submitJob(payload);
+    state.currentJob = job;
+    updateJobPanel(job, "Job queued.");
+    showToast("Local CPU job queued.");
+    pollJob(job.id);
+  } catch (error) {
+    showToast(error.message);
+    updateJobPanel(null, error.message);
+  } finally {
+    button.disabled = false;
+    button.querySelector("span").textContent = "Generate molecules";
+  }
+}
+
+function buildJobPayload() {
+  const example = EXAMPLES[state.exampleId] || EXAMPLES["4aua"];
+  const pdb = state.customPdb || {
+    name: example.pdb.split("/").pop(),
+    text: state.study?.pdbText,
+  };
+  const sdf = state.mode === "reference"
+    ? (state.customSdf || (state.study?.referenceSdf ? {
+      name: example.sdf?.split("/").pop() || "reference.sdf",
+      text: state.study.referenceSdf,
+    } : null))
+    : null;
+  return {
+    target: "local_cpu",
+    mode: state.mode,
+    example_id: state.exampleId,
+    email: $("#job-email").value.trim(),
+    pdb,
+    sdf,
+    parameters: {
+      ...state.parameters,
+      device: "cpu",
+    },
+  };
+}
+
+async function pollJob(jobId) {
+  clearTimeout(state.jobPollTimer);
+  try {
+    const [job, logs] = await Promise.all([
+      service.getJob(jobId),
+      service.getJobLogs(jobId),
+    ]);
+    state.currentJob = job;
+    updateJobPanel(job, logs.stdout || logs.stderr || "Waiting for job output.");
+    if (job.status === "completed") {
+      await loadCompletedJob(job);
+      return;
+    }
+    if (job.status === "failed" || job.status === "canceled") {
+      showToast(job.error_message || `Job ${job.status}.`);
+      return;
+    }
+    state.jobPollTimer = setTimeout(() => pollJob(jobId), 3000);
+  } catch (error) {
+    updateJobPanel(state.currentJob, error.message);
+    state.jobPollTimer = setTimeout(() => pollJob(jobId), 5000);
+  }
+}
+
+async function loadCompletedJob(job) {
+  const candidates = await service.loadJobResults(job);
+  if (!candidates.length) {
+    showToast("Job completed but no SDF results were found.");
+    return;
+  }
+  state.study = {
+    ...state.study,
+    example: {
+      ...(state.study?.example || EXAMPLES[state.exampleId] || EXAMPLES["4aua"]),
+      id: job.id,
+      label: job.id,
+    },
+    candidates,
+  };
+  state.selected = candidates[0];
+  $("#hero-candidate-count").textContent = candidates.length;
+  $("#hero-status").textContent = "Completed";
+  renderStudy();
+  showToast(`Job completed with ${candidates.length} result${candidates.length === 1 ? "" : "s"}.`);
+}
+
+function updateJobPanel(job, logText) {
+  $("#job-status").textContent = job?.status || "Idle";
+  $("#job-id").textContent = job?.id || "None";
+  $("#job-log").textContent = trimLog(logText || "No job submitted.");
+}
+
+function trimLog(text) {
+  return text.length > 5000 ? `…\n${text.slice(-5000)}` : text;
 }
 
 function renderSummary() {
@@ -296,7 +404,8 @@ function buildConfiguration() {
   const example = EXAMPLES[state.exampleId];
   return {
     interface_version: "0.1.0",
-    backend_connected: false,
+    backend_connected: true,
+    job_id: state.currentJob?.id || null,
     conditioning_mode: state.mode,
     inputs: {
       pdb_filename: state.customPdb?.name || example?.pdb || null,

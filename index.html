@@ -88,10 +88,23 @@
         <div class="run-bar">
           <div>
             <strong>Ready to generate</strong>
-            <span class="run-summary">Backend connection will activate this action.</span>
+            <span class="run-summary">Local CPU jobs run in the background and update this page when finished.</span>
             <code id="command-preview" hidden></code>
           </div>
           <button class="primary-button" id="preview-run"><span>Generate molecules</span><b>→</b></button>
+        </div>
+
+        <div class="job-panel" id="job-panel">
+          <div class="job-controls">
+            <label class="field-label" for="job-email">Email when finished</label>
+            <input id="job-email" type="email" placeholder="name@example.edu">
+          </div>
+          <div class="job-status-grid">
+            <div><span>Status</span><strong id="job-status">Idle</strong></div>
+            <div><span>Job ID</span><strong id="job-id">None</strong></div>
+            <div><span>Runtime target</span><strong>Local CPU</strong></div>
+          </div>
+          <pre id="job-log" class="job-log">No job submitted.</pre>
         </div>
       </section>
 

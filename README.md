@@ -4,8 +4,9 @@ A modular frontend prototype for configuring conDitar molecular generation studi
 exploring generated SDF structures, visualizing protein-ligand geometry, reviewing
 structure-derived metrics, and exporting study artifacts.
 
-This repository is a **frontend preview**. It uses bundled example inputs and
-previously generated SDF outputs; it does not execute the conDitar model yet.
+This repository is a GUI plus lightweight local backend prototype. It can still
+load bundled preview outputs, and it can submit local CPU conDitar sampling jobs
+through the Apptainer/Singularity image built from `conDitar-dev`.
 
 ## Quick start
 
@@ -15,6 +16,8 @@ Requirements:
 
 - Git
 - Python 3.9 or newer
+- Apptainer/Singularity for local job execution
+- A built `conditar-dev.sif` image
 - Internet access for 3Dmol.js, JSZip, and web fonts
 
 ```bash
@@ -38,6 +41,27 @@ python serve.py --open
 
 The environment contains only Python because the current GUI has no Python
 package dependencies.
+
+## Local CPU backend jobs
+
+By default the backend expects the conDitar container next to this repository:
+
+```text
+~/NINGLAB_DEV/conDitar-dev/conditar-dev.sif
+~/NINGLAB_DEV/conditar_gui_dev/
+```
+
+Override that path with `CONDITAR_SIF` when needed:
+
+```bash
+CONDITAR_SIF=/path/to/conditar-dev.sif python3 serve.py --open
+```
+
+The **Generate molecules** button submits a local CPU background job. Job inputs,
+logs, metadata, and outputs are written under `job_data/jobs/`, which is ignored
+by git. If `sendmail` is available on the machine and an email address is
+provided, the backend sends a completion notification; otherwise it writes the
+same message to the job log directory.
 
 ## Startup scripts
 
@@ -65,8 +89,8 @@ present before starting the server. Stop it with `Ctrl+C`.
   cycle estimate directly from each SDF.
 - Renders structures with 3Dmol.js and a dependency-free SVG 2D renderer.
 - Exports selected SDFs, evaluation CSV, run JSON, or a complete ZIP bundle.
-- Does not execute conDitar yet. `ExampleDataService` is the frontend boundary to
-  replace with a backend job API.
+- Submits local CPU jobs to the conDitar Apptainer image and polls job status.
+- OSC/Slurm GPU submission is not implemented yet.
 
 ## Using the preview
 
@@ -76,8 +100,8 @@ present before starting the server. Stop it with `Ctrl+C`.
 4. Select **Results** to browse available generated molecules.
 5. Use the 3D/2D controls, optional dataset charts, and download buttons.
 
-Uploaded inputs are read locally by the browser. The **Generate molecules**
-button is a placeholder until a backend job service is connected.
+Uploaded inputs are read by the browser, sent to the local backend, staged in a
+job directory, and passed to the conDitar container.
 
 ## Architecture
 
@@ -88,6 +112,8 @@ src/sdf.js           Browser-side SDF parsing and descriptors
 src/viewers.js       2D SVG and 3Dmol structure rendering
 src/charts.js        Native canvas property charts
 src/app.js           Application state and interactions
+backend/jobs.py      Local CPU queue, Apptainer command runner, job metadata
+serve.py             Static file server plus JSON job API
 ```
 
 ## Troubleshooting
@@ -121,6 +147,6 @@ conda env update -f environment.yml --prune
 
 ## Backend integration
 
-Replace or extend `ExampleDataService` in `src/data-service.js` with API methods
-for job submission, status polling, result manifests, and evaluation data. The
-UI state and viewers are intentionally separate from this adapter.
+The first backend target is local CPU execution. The next backend target is an
+OSC/Slurm runner that uses the same job metadata and API shape but generates and
+submits an `sbatch` script with `apptainer run --nv`.
