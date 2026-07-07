@@ -6,7 +6,7 @@ structure-derived metrics, and exporting study artifacts.
 
 This repository is a GUI plus lightweight local backend prototype. It can still
 load bundled preview outputs, and it can submit local CPU conDitar sampling jobs
-through the Apptainer/Singularity image built from `conDitar-dev`.
+through the Docker/Podman image built from `conDitar-dev`.
 
 ## Quick start
 
@@ -16,8 +16,8 @@ Requirements:
 
 - Git
 - Python 3.9 or newer
-- Apptainer/Singularity for local job execution
-- A built `conditar-dev.sif` image
+- Docker Desktop, Docker Engine, or Podman for local job execution
+- A loaded `localhost/conditar-dev:container-dev` image
 - Internet access for 3Dmol.js, JSZip, and web fonts
 
 ```bash
@@ -44,35 +44,66 @@ package dependencies.
 
 ## Local CPU backend jobs
 
-By default the backend expects the conDitar container next to this repository:
+The GUI backend now treats the Docker-format conDitar image as the main runtime
+artifact. Build or load the image from `conDitar-dev`, then start the GUI:
+
+```bash
+docker load -i /path/to/conditar-dev-docker.tar.gz
+CONDITAR_RUNTIME=docker python3 serve.py --open
+```
+
+The default image name is:
 
 ```text
-~/NINGLAB_DEV/conDitar-dev/conditar-dev.sif
-~/NINGLAB_DEV/conditar_gui_dev/
+localhost/conditar-dev:container-dev
 ```
 
-Override that path with `CONDITAR_SIF` when needed:
+Override it when needed:
 
 ```bash
-CONDITAR_SIF=/path/to/conditar-dev.sif python3 serve.py --open
+CONDITAR_DOCKER_IMAGE=my-registry/conditar-dev:tag CONDITAR_RUNTIME=docker python3 serve.py --open
 ```
 
-The backend looks for `apptainer` first and then `singularity`. If the executable
-is installed somewhere unusual, set:
+Runtime selection:
+
+- `CONDITAR_RUNTIME=auto` prefers Podman, then Docker, then Apptainer/Singularity.
+- `CONDITAR_RUNTIME=docker` forces Docker Desktop or Docker Engine.
+- `CONDITAR_RUNTIME=podman` forces Podman on OSC/Linux.
+- `CONDITAR_RUNTIME=apptainer` keeps the old SIF path available as a fallback.
+
+If an executable is installed somewhere unusual, set the matching variable:
 
 ```bash
-APPTAINER_BIN=/path/to/apptainer python3 serve.py --open
+DOCKER_BIN=/path/to/docker CONDITAR_RUNTIME=docker python3 serve.py --open
+PODMAN_BIN=/path/to/podman CONDITAR_RUNTIME=podman python3 serve.py --open
+APPTAINER_BIN=/path/to/apptainer CONDITAR_RUNTIME=apptainer python3 serve.py --open
 ```
 
-On macOS, Apptainer usually needs to run inside a Linux VM or another Linux
-environment. Installing it into a Python/conda environment is not enough because
-the backend launches a system container runtime executable.
+For the legacy Apptainer path, override the SIF path with `CONDITAR_SIF`:
+
+```bash
+CONDITAR_RUNTIME=apptainer CONDITAR_SIF=/path/to/conditar-dev.sif python3 serve.py --open
+```
 
 The **Generate molecules** button submits a local CPU background job. Job inputs,
 logs, metadata, and outputs are written under `job_data/jobs/`, which is ignored
-by git. If `sendmail` is available on the machine and an email address is
-provided, the backend sends a completion notification; otherwise it writes the
-same message to the job log directory.
+by git. If an email address is provided, the backend can send completion
+notifications through SMTP:
+
+```bash
+CONDITAR_SMTP_HOST=smtp.example.edu \
+CONDITAR_SMTP_PORT=587 \
+CONDITAR_SMTP_USER=name@example.edu \
+CONDITAR_SMTP_PASSWORD='app-password-or-token' \
+CONDITAR_SMTP_FROM=name@example.edu \
+CONDITAR_RUNTIME=docker \
+python3 serve.py --open
+```
+
+If SMTP is not configured, the backend tries local `sendmail`. If neither SMTP
+nor `sendmail` is available, it writes the same notification to
+`job_data/jobs/<job-id>/logs/email_notice.txt` so the completion path can still
+be tested locally.
 
 ## Startup scripts
 
@@ -100,7 +131,7 @@ present before starting the server. Stop it with `Ctrl+C`.
   cycle estimate directly from each SDF.
 - Renders structures with 3Dmol.js and a dependency-free SVG 2D renderer.
 - Exports selected SDFs, evaluation CSV, run JSON, or a complete ZIP bundle.
-- Submits local CPU jobs to the conDitar Apptainer image and polls job status.
+- Submits local CPU jobs to the conDitar Docker/Podman image and polls job status.
 - OSC/Slurm GPU submission is not implemented yet.
 
 ## Using the preview

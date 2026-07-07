@@ -4,12 +4,14 @@ import json
 import os
 import queue
 import shutil
+import smtplib
 import subprocess
 import threading
 import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.message import EmailMessage
 from pathlib import Path
 
 
@@ -44,7 +46,8 @@ class LocalJobManager:
             "CONDITAR_SIF",
             project_root.parent / "conDitar-dev" / "conditar-dev.sif",
         )).expanduser()
-        self.container_runtime = self._resolve_container_runtime()
+        self.docker_image = os.environ.get("CONDITAR_DOCKER_IMAGE", "localhost/conditar-dev:container-dev")
+        self.container_runtime_kind, self.container_runtime = self._resolve_container_runtime()
         self.default_tmp = Path(os.environ.get("CONDITAR_TMP", "/tmp/conditar-gui"))
         self._queue: queue.Queue[str] = queue.Queue()
         self._processes: dict[str, subprocess.Popen] = {}
@@ -99,6 +102,12 @@ class LocalJobManager:
                 "directory": str(paths.outputs.relative_to(paths.root)),
             },
             "parameters": parameters,
+            "container": {
+                "backend": self.container_runtime_kind,
+                "runtime": self.container_runtime,
+                "docker_image": self.docker_image if self.container_runtime_kind in {"docker", "podman"} else None,
+                "sif": str(self.sif_path) if self.container_runtime_kind in {"apptainer", "singularity"} else None,
+            },
             "command": command,
             "exit_code": None,
             "error_message": None,
@@ -155,13 +164,27 @@ class LocalJobManager:
         return job
 
     def _build_command(self, paths: JobPaths, pdb_path: Path, sdf_path: Path | None, parameters: dict) -> list[str]:
-        if not self.sif_path.exists():
-            raise ValueError(f"Container image not found: {self.sif_path}")
         if not self.container_runtime:
             raise ValueError(
-                "Apptainer/Singularity executable not found. Install a SIF runtime "
-                "or set APPTAINER_BIN=/path/to/apptainer."
+                "Container runtime not found. Install Docker/Podman for local CPU runs, "
+                "or Apptainer/Singularity for SIF runs. You can set CONDITAR_RUNTIME, "
+                "DOCKER_BIN, PODMAN_BIN, or APPTAINER_BIN."
             )
+        if self.container_runtime_kind in {"apptainer", "singularity"}:
+            return self._build_apptainer_command(paths, pdb_path, sdf_path, parameters)
+        if self.container_runtime_kind in {"docker", "podman"}:
+            return self._build_docker_command(paths, pdb_path, sdf_path, parameters)
+        raise ValueError(f"Unsupported container runtime: {self.container_runtime_kind}")
+
+    def _build_apptainer_command(
+        self,
+        paths: JobPaths,
+        pdb_path: Path,
+        sdf_path: Path | None,
+        parameters: dict,
+    ) -> list[str]:
+        if not self.sif_path.exists():
+            raise ValueError(f"Container image not found: {self.sif_path}")
         command = [
             self.container_runtime,
             "run",
@@ -187,11 +210,77 @@ class LocalJobManager:
                 command.extend([cli_key, str(value)])
         return command
 
-    def _resolve_container_runtime(self) -> str | None:
-        configured = os.environ.get("APPTAINER_BIN")
+    def _build_docker_command(
+        self,
+        paths: JobPaths,
+        pdb_path: Path,
+        sdf_path: Path | None,
+        parameters: dict,
+    ) -> list[str]:
+        tmp_dir = paths.root / "tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        command = [
+            self.container_runtime,
+            "run",
+            "--rm",
+            "-e",
+            "CONDITAR_DEVICE=cpu",
+            "-v",
+            f"{paths.inputs.resolve()}:/inputs:ro",
+            "-v",
+            f"{paths.outputs.resolve()}:/results",
+            "-v",
+            f"{tmp_dir.resolve()}:/tmp/conditar",
+            self.docker_image,
+            "--pdb",
+            f"/inputs/{pdb_path.name}",
+            "--out",
+            "/results",
+            "--tmp-dir",
+            "/tmp/conditar",
+            "--device",
+            "cpu",
+        ]
+        if sdf_path:
+            command.extend(["--sdf", f"/inputs/{sdf_path.name}"])
+        for gui_key, cli_key in (
+            ("num_samples", "--num-samples"),
+            ("batch_size", "--batch-size"),
+            ("pocket_radius", "--pocket-radius"),
+        ):
+            value = parameters.get(gui_key)
+            if value not in (None, ""):
+                command.extend([cli_key, str(value)])
+        return command
+
+    def _resolve_container_runtime(self) -> tuple[str | None, str | None]:
+        requested = os.environ.get("CONDITAR_RUNTIME", "auto").lower()
+        if requested in {"apptainer", "singularity"}:
+            return requested, self._resolve_executable("APPTAINER_BIN", requested)
+        if requested in {"docker", "podman"}:
+            return requested, self._resolve_executable(f"{requested.upper()}_BIN", requested)
+        if requested != "auto":
+            return requested, None
+
+        podman = self._resolve_executable("PODMAN_BIN", "podman")
+        if podman:
+            return "podman", podman
+        docker = self._resolve_executable("DOCKER_BIN", "docker")
+        if docker:
+            return "docker", docker
+
+        apptainer = shutil.which(os.environ.get("APPTAINER_BIN", "")) if os.environ.get("APPTAINER_BIN") else None
+        apptainer = apptainer or shutil.which("apptainer") or shutil.which("singularity")
+        if self.sif_path.exists() and apptainer:
+            kind = "singularity" if Path(apptainer).name == "singularity" else "apptainer"
+            return kind, apptainer
+        return None, None
+
+    def _resolve_executable(self, env_name: str, fallback: str) -> str | None:
+        configured = os.environ.get(env_name)
         if configured:
             return configured if shutil.which(configured) else None
-        return shutil.which("apptainer") or shutil.which("singularity")
+        return shutil.which(fallback)
 
     def _paths(self, job_id: str) -> JobPaths:
         root = self.job_root / job_id
@@ -277,9 +366,37 @@ class LocalJobManager:
             f"Output directory: {paths.outputs}",
             f"Error: {job.get('error_message') or ''}",
         ])
+        smtp_host = os.environ.get("CONDITAR_SMTP_HOST")
+        if smtp_host:
+            self._send_smtp_email(job, paths, subject, body)
+            return
         sendmail = shutil.which("sendmail")
         if sendmail:
             message = f"Subject: {subject}\nTo: {job['email']}\n\n{body}\n"
             subprocess.run([sendmail, "-t"], input=message, text=True, check=False)
             return
         (paths.logs / "email_notice.txt").write_text(f"To: {job['email']}\nSubject: {subject}\n\n{body}\n")
+
+    def _send_smtp_email(self, job: dict, paths: JobPaths, subject: str, body: str) -> None:
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["To"] = job["email"]
+        msg["From"] = os.environ.get("CONDITAR_SMTP_FROM", os.environ.get("CONDITAR_SMTP_USER", "conditar-gui@localhost"))
+        msg.set_content(body)
+
+        host = os.environ["CONDITAR_SMTP_HOST"]
+        port = int(os.environ.get("CONDITAR_SMTP_PORT", "587"))
+        user = os.environ.get("CONDITAR_SMTP_USER")
+        password = os.environ.get("CONDITAR_SMTP_PASSWORD")
+        use_tls = os.environ.get("CONDITAR_SMTP_TLS", "true").lower() not in {"0", "false", "no"}
+        try:
+            with smtplib.SMTP(host, port, timeout=30) as server:
+                if use_tls:
+                    server.starttls()
+                if user and password:
+                    server.login(user, password)
+                server.send_message(msg)
+        except Exception as error:
+            (paths.logs / "email_notice.txt").write_text(
+                f"To: {job['email']}\nSubject: {subject}\n\n{body}\n\nSMTP delivery failed: {error}\n"
+            )

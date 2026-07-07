@@ -55,8 +55,10 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
             if parts == ["api", "health"]:
                 self._send_json({
                     "ok": True,
-                    "sif": str(JOB_MANAGER.sif_path),
+                    "container_backend": JOB_MANAGER.container_runtime_kind,
                     "container_runtime": JOB_MANAGER.container_runtime,
+                    "docker_image": JOB_MANAGER.docker_image,
+                    "sif": str(JOB_MANAGER.sif_path),
                 })
             elif parts == ["api", "jobs"]:
                 self._send_json({"jobs": JOB_MANAGER.list_jobs()})
