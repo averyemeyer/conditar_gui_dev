@@ -90,7 +90,7 @@
         <div class="run-bar">
           <div>
             <strong>Ready to generate</strong>
-            <span class="run-summary">Local CPU jobs run in the background and update this page when finished.</span>
+            <span class="run-summary">Local CPU and OSC GPU jobs run in the background and update this page when finished.</span>
             <code id="command-preview" hidden></code>
           </div>
           <button class="primary-button" id="preview-run"><span>Generate molecules</span><b>→</b></button>
@@ -101,10 +101,39 @@
             <label class="field-label" for="job-email">Email when finished</label>
             <input id="job-email" type="email" placeholder="name@example.edu">
           </div>
+          <div class="job-controls">
+            <label class="field-label" for="job-target">Run target</label>
+            <select id="job-target">
+              <option value="local_cpu">Local CPU</option>
+              <option value="osc_gpu">OSC GPU · Slurm</option>
+            </select>
+          </div>
+          <div class="slurm-controls" id="slurm-controls" hidden>
+            <div>
+              <label class="field-label" for="slurm-time">Time limit</label>
+              <input id="slurm-time" type="text" value="04:00:00">
+            </div>
+            <div>
+              <label class="field-label" for="slurm-mem">Memory</label>
+              <input id="slurm-mem" type="text" value="32G">
+            </div>
+            <div>
+              <label class="field-label" for="slurm-cpus">CPUs</label>
+              <input id="slurm-cpus" type="number" value="4" min="1">
+            </div>
+            <div>
+              <label class="field-label" for="slurm-partition">Partition</label>
+              <input id="slurm-partition" type="text" placeholder="optional">
+            </div>
+            <div>
+              <label class="field-label" for="slurm-account">Account</label>
+              <input id="slurm-account" type="text" placeholder="optional">
+            </div>
+          </div>
           <div class="job-status-grid">
             <div><span>Status</span><strong id="job-status">Idle</strong></div>
             <div><span>Job ID</span><strong id="job-id">None</strong></div>
-            <div><span>Runtime target</span><strong>Local CPU</strong></div>
+            <div><span>Runtime target</span><strong id="job-runtime-label">Local CPU</strong></div>
           </div>
           <pre id="job-log" class="job-log">No job submitted.</pre>
         </div>
@@ -113,7 +142,7 @@
       <section id="jobs-section" class="workspace-section" hidden>
         <div class="section-heading">
           <div><p class="eyebrow">Step 2</p><h2>Job queue</h2></div>
-          <p>Track queued, running, and completed local CPU jobs. Completed jobs can be loaded into the Results tab.</p>
+          <p>Track queued, running, and completed jobs. Completed jobs can be loaded into the Results tab.</p>
         </div>
 
         <div class="jobs-grid">

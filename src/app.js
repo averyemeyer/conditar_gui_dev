@@ -66,6 +66,7 @@ function bindEvents() {
   });
   $("#reset-params").addEventListener("click", resetParameters);
   $("#preview-run").addEventListener("click", submitGenerationJob);
+  $("#job-target").addEventListener("change", updateJobTargetControls);
   $("#refresh-jobs").addEventListener("click", () => refreshJobs(true));
   $("#result-search").addEventListener("input", renderResultsTable);
   $("#result-sort").addEventListener("change", renderResultsTable);
@@ -83,6 +84,7 @@ function bindEvents() {
   $("#pdb-input").addEventListener("change", handlePdbUpload);
   $("#sdf-input").addEventListener("change", handleSdfUpload);
   window.addEventListener("resize", debounce(renderCharts, 120));
+  updateJobTargetControls();
 }
 
 async function setActiveTab(tab) {
@@ -176,7 +178,7 @@ async function submitGenerationJob() {
     updateJobDetail(job, "Job queued.");
     await refreshJobs(false);
     setActiveTab("jobs");
-    showToast("Local CPU job queued.");
+    showToast(`${targetLabel(job)} job queued.`);
     pollJob(job.id);
   } catch (error) {
     showToast(error.message);
@@ -200,16 +202,28 @@ function buildJobPayload() {
     } : null))
     : null;
   return {
-    target: "local_cpu",
+    target: $("#job-target").value,
     mode: state.mode,
     example_id: state.exampleId,
     email: $("#job-email").value.trim(),
     pdb,
     sdf,
+    slurm: buildSlurmPayload(),
     parameters: {
       ...state.parameters,
-      device: "cpu",
+      device: $("#job-target").value === "osc_gpu" ? "cuda:0" : "cpu",
     },
+  };
+}
+
+function buildSlurmPayload() {
+  return {
+    time: $("#slurm-time").value.trim(),
+    mem: $("#slurm-mem").value.trim(),
+    cpus: $("#slurm-cpus").value,
+    partition: $("#slurm-partition").value.trim(),
+    account: $("#slurm-account").value.trim(),
+    gpus: "1",
   };
 }
 
@@ -409,7 +423,18 @@ function updateResultsSource() {
 
 function targetLabel(job) {
   if (!job) return "Local CPU";
-  return job.target === "local_cpu" ? "Local CPU" : (job.target || "Local CPU");
+  if (job.target === "local_cpu") return "Local CPU";
+  if (job.target === "osc_gpu") return "OSC GPU";
+  return job.target || "Local CPU";
+}
+
+function updateJobTargetControls() {
+  const target = $("#job-target").value;
+  $("#slurm-controls").hidden = target !== "osc_gpu";
+  $("#job-runtime-label").textContent = target === "osc_gpu" ? "OSC GPU" : "Local CPU";
+  $("#param-device").value = target === "osc_gpu" ? "auto" : "cpu";
+  state.parameters.device = target === "osc_gpu" ? "auto" : "cpu";
+  updateCommand();
 }
 
 function formatDate(value) {

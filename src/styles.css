@@ -98,7 +98,10 @@ select, input[type="text"], input[type="number"], input[type="search"] { border:
 .compact-action { min-height: 30px; padding: 0 10px; font-size: 10px; }
 .job-panel { margin-top: 12px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .job-controls { max-width: 360px; margin-bottom: 14px; }
-.job-controls input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
+.job-controls input, .job-controls select { width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
+.slurm-controls { display: grid; grid-template-columns: repeat(5, minmax(90px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.slurm-controls[hidden] { display: none; }
+.slurm-controls input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
 .job-status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .job-status-grid div { padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: #f8faf9; }
 .job-status-grid span { display: block; color: var(--muted); font-size: 9px; text-transform: uppercase; }
@@ -211,6 +214,7 @@ body.high-contrast { --bg: #edf1ef; --paper: #fff; --ink: #07110f; --muted: #455
   .metric-card:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
   .run-bar, .viewer-footer { align-items: stretch; flex-direction: column; }
   .job-status-grid { grid-template-columns: 1fr; }
+  .slurm-controls { grid-template-columns: 1fr; }
   .download-bar { align-items: flex-start; flex-direction: column; }
   .download-actions { width: 100%; flex-wrap: wrap; }
   .selected-metrics { justify-content: space-between; }

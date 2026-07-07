@@ -105,6 +105,42 @@ nor `sendmail` is available, it writes the same notification to
 `job_data/jobs/<job-id>/logs/email_notice.txt` so the completion path can still
 be tested locally.
 
+## OSC GPU Slurm jobs
+
+Start the GUI on an OSC VM/login/desktop session with Slurm and Podman
+available, then choose **OSC GPU · Slurm** in the run setup panel. The backend
+stages inputs in `job_data/jobs/<job-id>/`, writes `run.slurm`, submits it with
+`sbatch`, and polls Slurm plus job log files until outputs are ready.
+
+```bash
+CONDITAR_RUNTIME=podman \
+CONDITAR_DOCKER_IMAGE=localhost/conditar-dev:container-dev \
+CONDITAR_SLURM_TIME=04:00:00 \
+CONDITAR_SLURM_MEM=32G \
+CONDITAR_SLURM_CPUS=4 \
+python3 serve.py --open
+```
+
+Optional Slurm defaults:
+
+```bash
+CONDITAR_SLURM_ACCOUNT=PCON0041
+CONDITAR_SLURM_PARTITION=nextgen
+CONDITAR_SLURM_GPUS=1
+```
+
+If the Podman image may not already exist on compute nodes, point the Slurm
+script at a shared image archive. The batch job will run `podman load` only when
+the image is missing:
+
+```bash
+CONDITAR_DOCKER_TAR=/fs/ess/PCON0041/path/to/conditar-dev-docker.tar
+```
+
+Each Slurm job records the `slurm_job_id`, generated script, container command,
+logs, and outputs under its `job_data/jobs/<job-id>/` folder. The GUI Jobs tab
+uses the same API for local CPU and OSC GPU jobs.
+
 ## Startup scripts
 
 macOS or Linux:
@@ -132,7 +168,7 @@ present before starting the server. Stop it with `Ctrl+C`.
 - Renders structures with 3Dmol.js and a dependency-free SVG 2D renderer.
 - Exports selected SDFs, evaluation CSV, run JSON, or a complete ZIP bundle.
 - Submits local CPU jobs to the conDitar Docker/Podman image and polls job status.
-- OSC/Slurm GPU submission is not implemented yet.
+- Submits OSC GPU jobs through Slurm using the same Docker/Podman image.
 
 ## Using the preview
 
@@ -154,7 +190,7 @@ src/sdf.js           Browser-side SDF parsing and descriptors
 src/viewers.js       2D SVG and 3Dmol structure rendering
 src/charts.js        Native canvas property charts
 src/app.js           Application state and interactions
-backend/jobs.py      Local CPU queue, Apptainer command runner, job metadata
+backend/jobs.py      Local CPU and OSC Slurm job orchestration
 serve.py             Static file server plus JSON job API
 ```
 
@@ -189,6 +225,6 @@ conda env update -f environment.yml --prune
 
 ## Backend integration
 
-The first backend target is local CPU execution. The next backend target is an
-OSC/Slurm runner that uses the same job metadata and API shape but generates and
-submits an `sbatch` script with `apptainer run --nv`.
+Both execution targets use the same JSON API and job folder layout. Local CPU
+jobs run immediately in a backend worker thread. OSC GPU jobs submit an `sbatch`
+script and are refreshed from Slurm state plus `logs/exit_code.txt`.

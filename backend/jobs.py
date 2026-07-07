@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import shlex
 import shutil
 import smtplib
 import subprocess
@@ -16,6 +17,21 @@ from pathlib import Path
 
 
 TERMINAL_STATES = {"completed", "failed", "canceled"}
+SLURM_PENDING_STATES = {"CONFIGURING", "PENDING", "REQUEUED", "RESIZING", "SUSPENDED"}
+SLURM_RUNNING_STATES = {"COMPLETING", "RUNNING", "STAGE_OUT"}
+SLURM_SUCCESS_STATES = {"COMPLETED"}
+SLURM_FAILURE_STATES = {
+    "BOOT_FAIL",
+    "CANCELLED",
+    "DEADLINE",
+    "FAILED",
+    "NODE_FAIL",
+    "OUT_OF_MEMORY",
+    "PREEMPTED",
+    "REVOKED",
+    "SPECIAL_EXIT",
+    "TIMEOUT",
+}
 
 
 def utc_now() -> str:
@@ -49,6 +65,18 @@ class LocalJobManager:
         self.docker_image = os.environ.get("CONDITAR_DOCKER_IMAGE", "localhost/conditar-dev:container-dev")
         self.container_runtime_kind, self.container_runtime = self._resolve_container_runtime()
         self.default_tmp = Path(os.environ.get("CONDITAR_TMP", "/tmp/conditar-gui"))
+        self.sbatch_bin = os.environ.get("SBATCH_BIN") or shutil.which("sbatch")
+        self.squeue_bin = os.environ.get("SQUEUE_BIN") or shutil.which("squeue")
+        self.sacct_bin = os.environ.get("SACCT_BIN") or shutil.which("sacct")
+        self.slurm_defaults = {
+            "account": os.environ.get("CONDITAR_SLURM_ACCOUNT", ""),
+            "partition": os.environ.get("CONDITAR_SLURM_PARTITION", ""),
+            "time": os.environ.get("CONDITAR_SLURM_TIME", "04:00:00"),
+            "mem": os.environ.get("CONDITAR_SLURM_MEM", "32G"),
+            "cpus": os.environ.get("CONDITAR_SLURM_CPUS", "4"),
+            "gpus": os.environ.get("CONDITAR_SLURM_GPUS", "1"),
+        }
+        self.docker_tar = os.environ.get("CONDITAR_DOCKER_TAR", "")
         self._queue: queue.Queue[str] = queue.Queue()
         self._processes: dict[str, subprocess.Popen] = {}
         self._lock = threading.Lock()
@@ -58,8 +86,9 @@ class LocalJobManager:
         self._worker.start()
 
     def submit(self, payload: dict) -> dict:
-        if payload.get("target", "local_cpu") != "local_cpu":
-            raise ValueError("Only local_cpu jobs are supported in this backend slice.")
+        target = payload.get("target", "local_cpu")
+        if target not in {"local_cpu", "osc_gpu"}:
+            raise ValueError("Only local_cpu and osc_gpu jobs are supported.")
         pdb = payload.get("pdb") or {}
         if not pdb.get("text"):
             raise ValueError("A PDB input is required.")
@@ -82,11 +111,12 @@ class LocalJobManager:
             sdf_path.write_text(sdf["text"])
 
         parameters = payload.get("parameters") or {}
-        parameters["device"] = "cpu"
-        command = self._build_command(paths, pdb_path, sdf_path, parameters)
+        parameters["device"] = "cuda:0" if target == "osc_gpu" else "cpu"
+        command = self._build_command(paths, pdb_path, sdf_path, parameters, target)
+        slurm_options = self._slurm_options(payload.get("slurm") or {}) if target == "osc_gpu" else None
         job = {
             "id": job_id,
-            "target": "local_cpu",
+            "target": target,
             "status": "queued",
             "created_at": utc_now(),
             "started_at": None,
@@ -102,10 +132,11 @@ class LocalJobManager:
                 "directory": str(paths.outputs.relative_to(paths.root)),
             },
             "parameters": parameters,
+            "slurm": slurm_options,
             "container": {
-                "backend": self.container_runtime_kind,
-                "runtime": self.container_runtime,
-                "docker_image": self.docker_image if self.container_runtime_kind in {"docker", "podman"} else None,
+                "backend": "slurm_podman" if target == "osc_gpu" else self.container_runtime_kind,
+                "runtime": os.environ.get("PODMAN_BIN", "podman") if target == "osc_gpu" else self.container_runtime,
+                "docker_image": self.docker_image if target == "osc_gpu" or self.container_runtime_kind in {"docker", "podman"} else None,
                 "sif": str(self.sif_path) if self.container_runtime_kind in {"apptainer", "singularity"} else None,
             },
             "command": command,
@@ -113,14 +144,20 @@ class LocalJobManager:
             "error_message": None,
         }
         self._write_job(paths, job)
-        self._queue.put(job_id)
+        if target == "osc_gpu":
+            job = self._submit_slurm_job(job, paths, pdb_path, sdf_path)
+        else:
+            self._queue.put(job_id)
         return job
 
     def list_jobs(self) -> list[dict]:
-        jobs = [self.get_job(path.parent.name) for path in self.job_root.glob("*/job.json")]
+        jobs = [self._refresh_job(self._read_job(path.parent.name)) for path in self.job_root.glob("*/job.json")]
         return sorted((job for job in jobs if job), key=lambda item: item["created_at"], reverse=True)
 
     def get_job(self, job_id: str) -> dict | None:
+        return self._refresh_job(self._read_job(job_id))
+
+    def _read_job(self, job_id: str) -> dict | None:
         metadata = self._paths(job_id).metadata
         if not metadata.exists():
             return None
@@ -151,6 +188,11 @@ class LocalJobManager:
             raise ValueError("Unknown job.")
         if job["status"] in TERMINAL_STATES:
             return job
+        if job.get("target") == "osc_gpu":
+            slurm_job_id = (job.get("slurm") or {}).get("job_id")
+            scancel = shutil.which(os.environ.get("SCANCEL_BIN", "")) if os.environ.get("SCANCEL_BIN") else shutil.which("scancel")
+            if slurm_job_id and scancel:
+                subprocess.run([scancel, slurm_job_id], check=False)
         process = self._processes.get(job_id)
         if process and process.poll() is None:
             process.terminate()
@@ -163,7 +205,16 @@ class LocalJobManager:
         self._write_job(self._paths(job_id), job)
         return job
 
-    def _build_command(self, paths: JobPaths, pdb_path: Path, sdf_path: Path | None, parameters: dict) -> list[str]:
+    def _build_command(
+        self,
+        paths: JobPaths,
+        pdb_path: Path,
+        sdf_path: Path | None,
+        parameters: dict,
+        target: str = "local_cpu",
+    ) -> list[str]:
+        if target == "osc_gpu":
+            return self._build_docker_command(paths, pdb_path, sdf_path, parameters, device="cuda:0", gpu=True)
         if not self.container_runtime:
             raise ValueError(
                 "Container runtime not found. Install Docker/Podman for local CPU runs, "
@@ -173,7 +224,7 @@ class LocalJobManager:
         if self.container_runtime_kind in {"apptainer", "singularity"}:
             return self._build_apptainer_command(paths, pdb_path, sdf_path, parameters)
         if self.container_runtime_kind in {"docker", "podman"}:
-            return self._build_docker_command(paths, pdb_path, sdf_path, parameters)
+            return self._build_docker_command(paths, pdb_path, sdf_path, parameters, device="cpu", gpu=False)
         raise ValueError(f"Unsupported container runtime: {self.container_runtime_kind}")
 
     def _build_apptainer_command(
@@ -216,15 +267,22 @@ class LocalJobManager:
         pdb_path: Path,
         sdf_path: Path | None,
         parameters: dict,
+        device: str = "cpu",
+        gpu: bool = False,
     ) -> list[str]:
         tmp_dir = paths.root / "tmp"
         tmp_dir.mkdir(parents=True, exist_ok=True)
+        runtime = os.environ.get("PODMAN_BIN", "podman") if gpu else self.container_runtime
         command = [
-            self.container_runtime,
+            runtime,
             "run",
             "--rm",
+        ]
+        if gpu:
+            command.extend(["--device", "nvidia.com/gpu=all"])
+        command.extend([
             "-e",
-            "CONDITAR_DEVICE=cpu",
+            f"CONDITAR_DEVICE={device}",
             "-v",
             f"{paths.inputs.resolve()}:/inputs:ro",
             "-v",
@@ -239,8 +297,8 @@ class LocalJobManager:
             "--tmp-dir",
             "/tmp/conditar",
             "--device",
-            "cpu",
-        ]
+            device,
+        ])
         if sdf_path:
             command.extend(["--sdf", f"/inputs/{sdf_path.name}"])
         for gui_key, cli_key in (
@@ -282,6 +340,174 @@ class LocalJobManager:
             return configured if shutil.which(configured) else None
         return shutil.which(fallback)
 
+    def _submit_slurm_job(self, job: dict, paths: JobPaths, pdb_path: Path, sdf_path: Path | None) -> dict:
+        if not self.sbatch_bin:
+            raise ValueError("sbatch not found. Start the GUI on OSC with Slurm available or set SBATCH_BIN.")
+        slurm = self._slurm_options(job.get("slurm") or {})
+        script_path = paths.root / "run.slurm"
+        script_path.write_text(self._slurm_script(job, paths, pdb_path, sdf_path, slurm))
+        job["slurm"] = {
+            **slurm,
+            "script": str(script_path.relative_to(paths.root)),
+            "job_id": None,
+            "state": None,
+        }
+        self._write_job(paths, job)
+
+        result = subprocess.run(
+            [self.sbatch_bin, str(script_path)],
+            cwd=str(self.project_root),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        (paths.logs / "sbatch.stdout.log").write_text(result.stdout)
+        (paths.logs / "sbatch.stderr.log").write_text(result.stderr)
+        if result.returncode != 0:
+            job["status"] = "failed"
+            job["finished_at"] = utc_now()
+            job["exit_code"] = result.returncode
+            job["error_message"] = result.stderr.strip() or "sbatch submission failed."
+            self._write_job(paths, job)
+            self._send_email(job, paths)
+            return job
+
+        slurm_job_id = self._parse_sbatch_job_id(result.stdout)
+        job["slurm"]["job_id"] = slurm_job_id
+        job["status"] = "queued"
+        self._write_job(paths, job)
+        return job
+
+    def _slurm_options(self, payload_options: dict) -> dict:
+        merged = {**self.slurm_defaults, **(payload_options or {})}
+        return {
+            "account": str(merged.get("account") or "").strip(),
+            "partition": str(merged.get("partition") or "").strip(),
+            "time": str(merged.get("time") or "04:00:00").strip(),
+            "mem": str(merged.get("mem") or "32G").strip(),
+            "cpus": str(merged.get("cpus") or "4").strip(),
+            "gpus": str(merged.get("gpus") or "1").strip(),
+        }
+
+    def _slurm_script(
+        self,
+        job: dict,
+        paths: JobPaths,
+        pdb_path: Path,
+        sdf_path: Path | None,
+        slurm: dict,
+    ) -> str:
+        lines = [
+            "#!/usr/bin/env bash",
+            f"#SBATCH --job-name=conditar-{job['id'][-8:]}",
+            f"#SBATCH --output={paths.stdout}",
+            f"#SBATCH --error={paths.stderr}",
+            "#SBATCH --nodes=1",
+            "#SBATCH --ntasks=1",
+            f"#SBATCH --cpus-per-task={slurm['cpus']}",
+            f"#SBATCH --mem={slurm['mem']}",
+            f"#SBATCH --time={slurm['time']}",
+            f"#SBATCH --gpus={slurm['gpus']}",
+        ]
+        if slurm["account"]:
+            lines.append(f"#SBATCH --account={slurm['account']}")
+        if slurm["partition"]:
+            lines.append(f"#SBATCH --partition={slurm['partition']}")
+
+        command = self._build_docker_command(paths, pdb_path, sdf_path, job["parameters"], device="cuda:0", gpu=True)
+        command_text = " ".join(shlex.quote(part) for part in command)
+        podman_command = shlex.quote(os.environ.get("PODMAN_BIN", "podman"))
+        image_check = ""
+        if self.docker_tar:
+            image_check = "\n".join([
+                f"if ! {podman_command} image exists {shlex.quote(self.docker_image)}; then",
+                f"  {podman_command} load -i {shlex.quote(self.docker_tar)}",
+                "fi",
+            ])
+
+        return "\n".join([
+            *lines,
+            "",
+            "set +e",
+            "echo \"Starting conDitar Slurm job at $(date)\"",
+            image_check,
+            f"echo \"$ {command_text}\"",
+            command_text,
+            "rc=$?",
+            f"echo \"$rc\" > {shlex.quote(str(paths.logs / 'exit_code.txt'))}",
+            "echo \"Finished conDitar Slurm job at $(date) with exit code $rc\"",
+            "exit $rc",
+            "",
+        ])
+
+    def _parse_sbatch_job_id(self, stdout: str) -> str | None:
+        parts = stdout.strip().split()
+        return parts[-1] if parts else None
+
+    def _refresh_job(self, job: dict | None) -> dict | None:
+        if not job or job.get("status") in TERMINAL_STATES:
+            return job
+        if job.get("target") != "osc_gpu":
+            return job
+
+        paths = self._paths(job["id"])
+        exit_code_path = paths.logs / "exit_code.txt"
+        if exit_code_path.exists():
+            try:
+                exit_code = int(exit_code_path.read_text().strip())
+            except ValueError:
+                exit_code = 1
+            job["exit_code"] = exit_code
+            job["finished_at"] = job.get("finished_at") or utc_now()
+            job["status"] = "completed" if exit_code == 0 else "failed"
+            if exit_code != 0:
+                job["error_message"] = f"Slurm container command exited with status {exit_code}."
+            self._write_job(paths, job)
+            self._send_email(job, paths)
+            return job
+
+        state = self._slurm_state(job)
+        if state:
+            job.setdefault("slurm", {})["state"] = state
+            if state in SLURM_PENDING_STATES:
+                job["status"] = "queued"
+            elif state in SLURM_RUNNING_STATES:
+                job["status"] = "running"
+                job["started_at"] = job.get("started_at") or utc_now()
+            elif state in SLURM_SUCCESS_STATES:
+                job["status"] = "completed" if list(paths.outputs.rglob("*.sdf")) else "failed"
+                job["finished_at"] = job.get("finished_at") or utc_now()
+                job["exit_code"] = 0 if job["status"] == "completed" else 1
+                if job["status"] == "failed":
+                    job["error_message"] = "Slurm completed but no SDF outputs were found."
+                self._send_email(job, paths)
+            elif state in SLURM_FAILURE_STATES:
+                job["status"] = "failed"
+                job["finished_at"] = job.get("finished_at") or utc_now()
+                job["exit_code"] = 1
+                job["error_message"] = f"Slurm job ended with state {state}."
+                self._send_email(job, paths)
+            self._write_job(paths, job)
+        return job
+
+    def _slurm_state(self, job: dict) -> str | None:
+        slurm_job_id = (job.get("slurm") or {}).get("job_id")
+        if not slurm_job_id:
+            return None
+        for command in self._slurm_state_commands(slurm_job_id):
+            result = subprocess.run(command, text=True, capture_output=True, check=False)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip().splitlines()[0].split("|")[0].strip().split()[0]
+        return None
+
+    def _slurm_state_commands(self, slurm_job_id: str) -> list[list[str]]:
+        commands = []
+        if self.squeue_bin:
+            commands.append([self.squeue_bin, "-h", "-j", slurm_job_id, "-o", "%T"])
+        if self.sacct_bin:
+            commands.append([self.sacct_bin, "-n", "-X", "-j", slurm_job_id, "-o", "State", "-P"])
+        return commands
+
     def _paths(self, job_id: str) -> JobPaths:
         root = self.job_root / job_id
         return JobPaths(
@@ -301,6 +527,8 @@ class LocalJobManager:
     def _recover_incomplete_jobs(self) -> None:
         for job in self.list_jobs():
             if job["status"] not in TERMINAL_STATES:
+                if job.get("target") == "osc_gpu":
+                    continue
                 job["status"] = "failed"
                 job["finished_at"] = utc_now()
                 job["error_message"] = "Server restarted before this job completed."

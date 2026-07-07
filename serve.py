@@ -58,7 +58,14 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
                     "container_backend": JOB_MANAGER.container_runtime_kind,
                     "container_runtime": JOB_MANAGER.container_runtime,
                     "docker_image": JOB_MANAGER.docker_image,
+                    "docker_tar": JOB_MANAGER.docker_tar,
                     "sif": str(JOB_MANAGER.sif_path),
+                    "slurm": {
+                        "sbatch": JOB_MANAGER.sbatch_bin,
+                        "squeue": JOB_MANAGER.squeue_bin,
+                        "sacct": JOB_MANAGER.sacct_bin,
+                        "defaults": JOB_MANAGER.slurm_defaults,
+                    },
                 })
             elif parts == ["api", "jobs"]:
                 self._send_json({"jobs": JOB_MANAGER.list_jobs()})
