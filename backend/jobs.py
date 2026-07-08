@@ -467,11 +467,22 @@ class LocalJobManager:
                 "fi",
             ])
 
+        fallback_tmp = shlex.quote(str(paths.root / "tmp"))
+        runtime_setup = "\n".join([
+            f"export TMPDIR=\"${{TMPDIR:-{fallback_tmp}}}\"",
+            "mkdir -p \"$TMPDIR\"",
+            "export XDG_RUNTIME_DIR=\"$TMPDIR/xdg_runtime_${SLURM_JOB_ID:-conditar}\"",
+            "mkdir -p \"$XDG_RUNTIME_DIR\"",
+            "chmod 700 \"$XDG_RUNTIME_DIR\"",
+            "echo \"XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR\"",
+        ])
+
         return "\n".join([
             *lines,
             "",
             "set +e",
             "echo \"Starting conDitar Slurm job at $(date)\"",
+            runtime_setup,
             image_check,
             f"echo \"$ {command_text}\"",
             command_text,
