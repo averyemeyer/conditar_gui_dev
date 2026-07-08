@@ -227,9 +227,9 @@ function buildSlurmPayload() {
     time: $("#slurm-time").value.trim(),
     mem: $("#slurm-mem").value.trim(),
     cpus: $("#slurm-cpus").value,
+    gpus: $("#slurm-gpus").value,
     partition: $("#slurm-partition").value.trim(),
     account: $("#slurm-account").value.trim(),
-    gpus: "1",
   };
 }
 
