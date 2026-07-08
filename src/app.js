@@ -387,7 +387,7 @@ function renderResultsTable() {
   $("#result-table").innerHTML = candidates.map((item) => `
     <tr data-index="${item.index}" class="${state.selected?.index === item.index ? "active" : ""}">
       <td>${item.id}<br><small>${item.formula}</small></td>
-      <td>${item.molecularWeight}</td><td>${item.rings}</td>
+      <td>${item.molecularWeight}</td><td>${item.rings}</td><td>${formatMetric(item.vinaScore)}</td>
     </tr>`).join("");
   $$("#result-table tr").forEach((row) => row.addEventListener("click", () => {
     state.selected = state.study.candidates.find((item) => item.index === Number(row.dataset.index));
@@ -409,12 +409,19 @@ function renderSelectedStructure() {
   const molecule = state.selected;
   if (!molecule || !state.study || state.activeTab !== "results") return;
   $("#selected-name").textContent = molecule.id;
-  $("#selected-metrics").innerHTML = [
+  const metrics = [
     ["Formula", molecule.formula],
     ["MW", `${molecule.molecularWeight} Da`],
     ["Heavy atoms", molecule.heavyAtoms],
     ["Rings", molecule.rings],
-  ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join("");
+  ];
+  if (molecule.vinaScore !== null) {
+    metrics.push(["Vina", formatMetric(molecule.vinaScore)]);
+  }
+  if (molecule.properties?.VINA_MINIMIZE) {
+    metrics.push(["Vina min", formatMetric(Number.parseFloat(molecule.properties.VINA_MINIMIZE))]);
+  }
+  $("#selected-metrics").innerHTML = metrics.map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join("");
   render2D($("#viewer-2d"), molecule);
   render3D($("#viewer-3d"), molecule, state.study.pdbText, {
     proteinStyle: $("#protein-style").value,
@@ -467,6 +474,10 @@ function formatDate(value) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatMetric(value) {
+  return Number.isFinite(value) ? value.toFixed(2) : "-";
 }
 
 function updateCommand() {

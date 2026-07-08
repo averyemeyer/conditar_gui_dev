@@ -39,10 +39,14 @@ export function parseSdf(text, name = "molecule.sdf") {
   const molecularWeight = atoms.reduce((sum, atom) => sum + (ATOMIC_WEIGHTS[atom.element] || 0), 0);
   const components = connectedComponents(atoms.length, bonds);
   const rings = Math.max(0, bonds.length - atoms.length + components);
+  const properties = parseProperties(lines);
+  const vinaScore = numericProperty(properties, "VINA_SCORE_ONLY");
 
   return {
     name,
     text,
+    properties,
+    vinaScore,
     atoms,
     bonds,
     atomCount: atoms.length,
@@ -52,6 +56,27 @@ export function parseSdf(text, name = "molecule.sdf") {
     rings,
     formula: formulaFromCounts(elementCounts),
   };
+}
+
+function parseProperties(lines) {
+  const properties = {};
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = lines[i].match(/^>\s+<([^>]+)>/);
+    if (!match) continue;
+    const values = [];
+    i += 1;
+    while (i < lines.length && lines[i] !== "") {
+      values.push(lines[i]);
+      i += 1;
+    }
+    properties[match[1]] = values.join("\n");
+  }
+  return properties;
+}
+
+function numericProperty(properties, key) {
+  const value = Number.parseFloat(properties[key]);
+  return Number.isFinite(value) ? value : null;
 }
 
 function connectedComponents(atomCount, bonds) {

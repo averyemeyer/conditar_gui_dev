@@ -182,14 +182,7 @@ class LocalJobManager:
                     "relative_path": str(path.relative_to(paths.root)),
                     "text": path.read_text(errors="replace"),
                 })
-        score_files = []
-        for path in sorted(paths.outputs.rglob("vina_scores.*")):
-            score_files.append({
-                "name": path.name,
-                "relative_path": str(path.relative_to(paths.root)),
-                "text": path.read_text(errors="replace"),
-            })
-        return {"job_id": job_id, "files": files, "score_files": score_files}
+        return {"job_id": job_id, "files": files}
 
     def cancel(self, job_id: str) -> dict:
         job = self.get_job(job_id)

@@ -146,11 +146,15 @@ uses the same API for local CPU and OSC GPU jobs.
 The setup panel includes an optional Vina scoring step. When enabled, the
 backend adds `--vina-score` arguments to the container command. conDitar
 generation uses the selected CPU/GPU target first; Vina then runs inside the
-same container/job using CPU threads. Score outputs are written to:
+same container/job using CPU threads. Scores are written directly into the
+generated SDF records as properties such as:
 
 ```text
-job_data/jobs/<job-id>/outputs/eval_results/vina_scores.csv
-job_data/jobs/<job-id>/outputs/eval_results/vina_scores.json
+VINA_SCORE_ONLY
+VINA_MINIMIZE
+VINA_DOCK
+QED
+SA
 ```
 
 ## V1 test checklist
@@ -165,7 +169,8 @@ Results:
 3. OSC GPU Slurm pocket-only job with `xxxx/xxxx_pocket.pdb`.
 4. OSC GPU Slurm protein plus reference ligand job with `4aua_protein.pdb` and
    `4aua_ligand.sdf`.
-5. One Vina-enabled job and confirm `eval_results/vina_scores.csv` is written.
+5. One Vina-enabled job and confirm the generated SDFs contain `VINA_SCORE_ONLY`
+   properties.
 6. Restart `serve.py`, refresh the Jobs tab, and confirm completed jobs and
    generated SDFs are still viewable.
 
