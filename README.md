@@ -157,6 +157,10 @@ QED
 SA
 ```
 
+The Results page reads those SDF properties dynamically. When `VINA_SCORE_ONLY`
+is present, Vina appears in the candidate table, selected-molecule metrics,
+metric CSV export, and chart/sort metric controls.
+
 ## V1 test checklist
 
 Before considering the CPU/GPU container and GUI backend v1 complete, run these

@@ -362,13 +362,19 @@ function trimLog(text) {
 
 function renderSummary() {
   const candidates = state.study?.candidates || [];
-  const average = (key) => candidates.length ? candidates.reduce((sum, item) => sum + item[key], 0) / candidates.length : 0;
+  const average = (key) => {
+    const values = numericValues(candidates, key);
+    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  };
   const cards = [
     ["Loaded structures", candidates.length, "SDF"],
-    ["Mean molecular weight", average("molecularWeight").toFixed(1), "Da"],
-    ["Mean heavy atoms", average("heavyAtoms").toFixed(1), "atoms"],
+    ["Mean molecular weight", formatMetric(average("molecularWeight"), 1), "Da"],
+    ["Mean heavy atoms", formatMetric(average("heavyAtoms"), 1), "atoms"],
     ["Ring-containing", candidates.filter((item) => item.rings > 0).length, "molecules"],
   ];
+  if (numericValues(candidates, "vinaScore").length) {
+    cards.push(["Mean Vina score", formatMetric(average("vinaScore")), "kcal/mol"]);
+  }
   $("#metric-strip").innerHTML = cards.map(([label, value, unit]) => `<div class="metric-card"><span>${label}</span><strong>${value}</strong><small>${unit}</small></div>`).join("");
 }
 
@@ -378,7 +384,7 @@ function filteredCandidates() {
   const sort = $("#result-sort").value;
   return candidates
     .filter((item) => item.id.toLowerCase().includes(query) || item.formula.toLowerCase().includes(query))
-    .sort((a, b) => sort === "index" ? a.index - b.index : b[sort] - a[sort]);
+    .sort((a, b) => sort === "index" ? a.index - b.index : compareMetric(b[sort], a[sort]));
 }
 
 function renderResultsTable() {
@@ -401,7 +407,7 @@ function renderCharts() {
   if (!state.study || state.activeTab !== "results" || !$(".analytics-details").open) return;
   const metric = $("#histogram-metric").value;
   const label = $("#histogram-metric").selectedOptions[0].textContent;
-  drawHistogram($("#histogram"), state.study.candidates.map((item) => item[metric]), label);
+  drawHistogram($("#histogram"), numericValues(state.study.candidates, metric), label);
   drawScatter($("#scatterplot"), state.study.candidates, state.selected?.index);
 }
 
@@ -476,8 +482,23 @@ function formatDate(value) {
   });
 }
 
-function formatMetric(value) {
-  return Number.isFinite(value) ? value.toFixed(2) : "-";
+function formatMetric(value, digits = 2) {
+  return Number.isFinite(value) ? value.toFixed(digits) : "-";
+}
+
+function numericValues(items, key) {
+  return items.map((item) => Number(item[key])).filter(Number.isFinite);
+}
+
+function compareMetric(a, b) {
+  const left = Number(a);
+  const right = Number(b);
+  const leftValid = Number.isFinite(left);
+  const rightValid = Number.isFinite(right);
+  if (!leftValid && !rightValid) return 0;
+  if (!leftValid) return -1;
+  if (!rightValid) return 1;
+  return left - right;
 }
 
 function updateCommand() {
@@ -539,9 +560,7 @@ function downloadSelected() {
 
 function downloadCsv() {
   if (!state.study) return;
-  const header = ["candidate", "source_file", "formula", "molecular_weight", "atom_count", "heavy_atoms", "hetero_atoms", "ring_estimate"];
-  const rows = state.study.candidates.map((item) => [item.id, item.name, item.formula, item.molecularWeight, item.atomCount, item.heavyAtoms, item.heteroAtoms, item.rings]);
-  downloadBlob([header, ...rows].map((row) => row.join(",")).join("\n"), `${studyName()}_metrics.csv`, "text/csv");
+  downloadBlob(csvText(), `${studyName()}_metrics.csv`, "text/csv");
 }
 
 function downloadConfig() {
@@ -586,9 +605,40 @@ function buildConfiguration() {
 }
 
 function csvText() {
-  const header = ["candidate", "source_file", "formula", "molecular_weight", "atom_count", "heavy_atoms", "hetero_atoms", "ring_estimate"];
-  const rows = state.study.candidates.map((item) => [item.id, item.name, item.formula, item.molecularWeight, item.atomCount, item.heavyAtoms, item.heteroAtoms, item.rings]);
-  return [header, ...rows].map((row) => row.join(",")).join("\n");
+  const header = [
+    "candidate",
+    "source_file",
+    "formula",
+    "molecular_weight",
+    "atom_count",
+    "heavy_atoms",
+    "hetero_atoms",
+    "ring_estimate",
+    "vina_score_only",
+    "vina_minimize",
+    "vina_dock",
+    "vina_status",
+  ];
+  const rows = state.study.candidates.map((item) => [
+    item.id,
+    item.name,
+    item.formula,
+    item.molecularWeight,
+    item.atomCount,
+    item.heavyAtoms,
+    item.heteroAtoms,
+    item.rings,
+    item.properties?.VINA_SCORE_ONLY || "",
+    item.properties?.VINA_MINIMIZE || "",
+    item.properties?.VINA_DOCK || "",
+    item.properties?.VINA_STATUS || "",
+  ]);
+  return [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 function studyName() {
