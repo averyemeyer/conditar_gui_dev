@@ -67,6 +67,10 @@ function bindEvents() {
   $("#reset-params").addEventListener("click", resetParameters);
   $("#preview-run").addEventListener("click", submitGenerationJob);
   $("#job-target").addEventListener("change", updateJobTargetControls);
+  $("#vina-enabled").addEventListener("change", updateVinaControls);
+  ["#vina-mode", "#vina-exhaustiveness", "#vina-cpu"].forEach((selector) => {
+    $(selector).addEventListener("input", updateCommand);
+  });
   $("#refresh-jobs").addEventListener("click", () => refreshJobs(true));
   $("#result-search").addEventListener("input", renderResultsTable);
   $("#result-sort").addEventListener("change", renderResultsTable);
@@ -85,6 +89,7 @@ function bindEvents() {
   $("#sdf-input").addEventListener("change", handleSdfUpload);
   window.addEventListener("resize", debounce(renderCharts, 120));
   updateJobTargetControls();
+  updateVinaControls();
 }
 
 async function setActiveTab(tab) {
@@ -209,6 +214,7 @@ function buildJobPayload() {
     pdb,
     sdf,
     slurm: buildSlurmPayload(),
+    postprocess: buildPostprocessPayload(),
     parameters: {
       ...state.parameters,
       device: $("#job-target").value === "osc_gpu" ? "cuda:0" : "cpu",
@@ -224,6 +230,15 @@ function buildSlurmPayload() {
     partition: $("#slurm-partition").value.trim(),
     account: $("#slurm-account").value.trim(),
     gpus: "1",
+  };
+}
+
+function buildPostprocessPayload() {
+  return {
+    vina: $("#vina-enabled").checked,
+    vina_mode: $("#vina-mode").value,
+    vina_exhaustiveness: $("#vina-exhaustiveness").value,
+    vina_cpu: $("#vina-cpu").value,
   };
 }
 
@@ -437,6 +452,11 @@ function updateJobTargetControls() {
   updateCommand();
 }
 
+function updateVinaControls() {
+  $("#vina-options").hidden = !$("#vina-enabled").checked;
+  updateCommand();
+}
+
 function formatDate(value) {
   if (!value) return "-";
   const date = new Date(value);
@@ -462,6 +482,9 @@ function updateCommand() {
     `--pdb_filename ${example.pdb}`,
   ];
   if (state.mode === "reference" && example.sdf) args.push(`--sdf_filename ${example.sdf}`);
+  if ($("#vina-enabled").checked) {
+    args.push(`--vina_score --vina_mode ${$("#vina-mode").value} --vina_exhaustiveness ${$("#vina-exhaustiveness").value}`);
+  }
   $("#command-preview").textContent = args.join(" ");
 }
 

@@ -112,7 +112,8 @@ class LocalJobManager:
 
         parameters = payload.get("parameters") or {}
         parameters["device"] = "cuda:0" if target == "osc_gpu" else "cpu"
-        command = self._build_command(paths, pdb_path, sdf_path, parameters, target)
+        postprocess = self._postprocess_options(payload.get("postprocess") or {})
+        command = self._build_command(paths, pdb_path, sdf_path, parameters, target, postprocess)
         slurm_options = self._slurm_options(payload.get("slurm") or {}) if target == "osc_gpu" else None
         job = {
             "id": job_id,
@@ -132,6 +133,7 @@ class LocalJobManager:
                 "directory": str(paths.outputs.relative_to(paths.root)),
             },
             "parameters": parameters,
+            "postprocess": postprocess,
             "slurm": slurm_options,
             "container": {
                 "backend": "slurm_podman" if target == "osc_gpu" else self.container_runtime_kind,
@@ -180,7 +182,14 @@ class LocalJobManager:
                     "relative_path": str(path.relative_to(paths.root)),
                     "text": path.read_text(errors="replace"),
                 })
-        return {"job_id": job_id, "files": files}
+        score_files = []
+        for path in sorted(paths.outputs.rglob("vina_scores.*")):
+            score_files.append({
+                "name": path.name,
+                "relative_path": str(path.relative_to(paths.root)),
+                "text": path.read_text(errors="replace"),
+            })
+        return {"job_id": job_id, "files": files, "score_files": score_files}
 
     def cancel(self, job_id: str) -> dict:
         job = self.get_job(job_id)
@@ -212,9 +221,10 @@ class LocalJobManager:
         sdf_path: Path | None,
         parameters: dict,
         target: str = "local_cpu",
+        postprocess: dict | None = None,
     ) -> list[str]:
         if target == "osc_gpu":
-            return self._build_docker_command(paths, pdb_path, sdf_path, parameters, device="cuda:0", gpu=True)
+            return self._build_docker_command(paths, pdb_path, sdf_path, parameters, device="cuda:0", gpu=True, postprocess=postprocess)
         if not self.container_runtime:
             raise ValueError(
                 "Container runtime not found. Install Docker/Podman for local CPU runs, "
@@ -224,7 +234,7 @@ class LocalJobManager:
         if self.container_runtime_kind in {"apptainer", "singularity"}:
             return self._build_apptainer_command(paths, pdb_path, sdf_path, parameters)
         if self.container_runtime_kind in {"docker", "podman"}:
-            return self._build_docker_command(paths, pdb_path, sdf_path, parameters, device="cpu", gpu=False)
+            return self._build_docker_command(paths, pdb_path, sdf_path, parameters, device="cpu", gpu=False, postprocess=postprocess)
         raise ValueError(f"Unsupported container runtime: {self.container_runtime_kind}")
 
     def _build_apptainer_command(
@@ -269,6 +279,7 @@ class LocalJobManager:
         parameters: dict,
         device: str = "cpu",
         gpu: bool = False,
+        postprocess: dict | None = None,
     ) -> list[str]:
         tmp_dir = paths.root / "tmp"
         tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -309,6 +320,7 @@ class LocalJobManager:
             value = parameters.get(gui_key)
             if value not in (None, ""):
                 command.extend([cli_key, str(value)])
+        self._append_postprocess_args(command, postprocess)
         return command
 
     def _resolve_container_runtime(self) -> tuple[str | None, str | None]:
@@ -339,6 +351,31 @@ class LocalJobManager:
         if configured:
             return configured if shutil.which(configured) else None
         return shutil.which(fallback)
+
+    def _postprocess_options(self, payload_options: dict) -> dict:
+        vina_enabled = bool(payload_options.get("vina"))
+        vina_mode = str(payload_options.get("vina_mode") or "vina_score").strip()
+        if vina_mode not in {"vina_score", "vina_dock"}:
+            raise ValueError("Vina mode must be vina_score or vina_dock.")
+        return {
+            "vina": vina_enabled,
+            "vina_mode": vina_mode,
+            "vina_exhaustiveness": str(payload_options.get("vina_exhaustiveness") or "8").strip(),
+            "vina_cpu": str(payload_options.get("vina_cpu") or "4").strip(),
+        }
+
+    def _append_postprocess_args(self, command: list[str], postprocess: dict | None) -> None:
+        if not postprocess or not postprocess.get("vina"):
+            return
+        command.extend([
+            "--vina-score",
+            "--vina-mode",
+            postprocess.get("vina_mode") or "vina_score",
+            "--vina-exhaustiveness",
+            str(postprocess.get("vina_exhaustiveness") or "8"),
+            "--vina-cpu",
+            str(postprocess.get("vina_cpu") or "4"),
+        ])
 
     def _submit_slurm_job(self, job: dict, paths: JobPaths, pdb_path: Path, sdf_path: Path | None) -> dict:
         if not self.sbatch_bin:
@@ -414,7 +451,15 @@ class LocalJobManager:
         if slurm["partition"]:
             lines.append(f"#SBATCH --partition={slurm['partition']}")
 
-        command = self._build_docker_command(paths, pdb_path, sdf_path, job["parameters"], device="cuda:0", gpu=True)
+        command = self._build_docker_command(
+            paths,
+            pdb_path,
+            sdf_path,
+            job["parameters"],
+            device="cuda:0",
+            gpu=True,
+            postprocess=job.get("postprocess"),
+        )
         command_text = " ".join(shlex.quote(part) for part in command)
         podman_command = shlex.quote(os.environ.get("PODMAN_BIN", "podman"))
         image_check = ""

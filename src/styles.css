@@ -102,6 +102,12 @@ select, input[type="text"], input[type="number"], input[type="search"] { border:
 .slurm-controls { display: grid; grid-template-columns: repeat(5, minmax(90px, 1fr)); gap: 10px; margin-bottom: 14px; }
 .slurm-controls[hidden] { display: none; }
 .slurm-controls input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
+.postprocess-controls { margin-bottom: 14px; }
+.check-control { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: 12px; font-weight: 700; }
+.check-control input { width: 16px; height: 16px; accent-color: var(--accent); }
+.vina-options { display: grid; grid-template-columns: repeat(3, minmax(90px, 160px)); gap: 10px; margin-top: 10px; }
+.vina-options[hidden] { display: none; }
+.vina-options input, .vina-options select { width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
 .job-status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .job-status-grid div { padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: #f8faf9; }
 .job-status-grid span { display: block; color: var(--muted); font-size: 9px; text-transform: uppercase; }
@@ -215,6 +221,7 @@ body.high-contrast { --bg: #edf1ef; --paper: #fff; --ink: #07110f; --muted: #455
   .run-bar, .viewer-footer { align-items: stretch; flex-direction: column; }
   .job-status-grid { grid-template-columns: 1fr; }
   .slurm-controls { grid-template-columns: 1fr; }
+  .vina-options { grid-template-columns: 1fr; }
   .download-bar { align-items: flex-start; flex-direction: column; }
   .download-actions { width: 100%; flex-wrap: wrap; }
   .selected-metrics { justify-content: space-between; }

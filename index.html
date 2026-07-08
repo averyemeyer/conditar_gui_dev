@@ -130,6 +130,29 @@
               <input id="slurm-account" type="text" placeholder="optional">
             </div>
           </div>
+          <div class="postprocess-controls">
+            <label class="check-control">
+              <input id="vina-enabled" type="checkbox">
+              <span>Run Vina scoring after generation</span>
+            </label>
+            <div class="vina-options" id="vina-options" hidden>
+              <div>
+                <label class="field-label" for="vina-mode">Vina mode</label>
+                <select id="vina-mode">
+                  <option value="vina_score">Score + minimize</option>
+                  <option value="vina_dock">Dock</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label" for="vina-exhaustiveness">Exhaustiveness</label>
+                <input id="vina-exhaustiveness" type="number" value="8" min="1">
+              </div>
+              <div>
+                <label class="field-label" for="vina-cpu">CPU threads</label>
+                <input id="vina-cpu" type="number" value="4" min="1">
+              </div>
+            </div>
+          </div>
           <div class="job-status-grid">
             <div><span>Status</span><strong id="job-status">Idle</strong></div>
             <div><span>Job ID</span><strong id="job-id">None</strong></div>

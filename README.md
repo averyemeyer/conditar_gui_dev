@@ -141,6 +141,18 @@ Each Slurm job records the `slurm_job_id`, generated script, container command,
 logs, and outputs under its `job_data/jobs/<job-id>/` folder. The GUI Jobs tab
 uses the same API for local CPU and OSC GPU jobs.
 
+## Vina post-processing
+
+The setup panel includes an optional Vina scoring step. When enabled, the
+backend adds `--vina-score` arguments to the container command. conDitar
+generation uses the selected CPU/GPU target first; Vina then runs inside the
+same container/job using CPU threads. Score outputs are written to:
+
+```text
+job_data/jobs/<job-id>/outputs/eval_results/vina_scores.csv
+job_data/jobs/<job-id>/outputs/eval_results/vina_scores.json
+```
+
 ## V1 test checklist
 
 Before considering the CPU/GPU container and GUI backend v1 complete, run these
@@ -153,7 +165,8 @@ Results:
 3. OSC GPU Slurm pocket-only job with `xxxx/xxxx_pocket.pdb`.
 4. OSC GPU Slurm protein plus reference ligand job with `4aua_protein.pdb` and
    `4aua_ligand.sdf`.
-5. Restart `serve.py`, refresh the Jobs tab, and confirm completed jobs and
+5. One Vina-enabled job and confirm `eval_results/vina_scores.csv` is written.
+6. Restart `serve.py`, refresh the Jobs tab, and confirm completed jobs and
    generated SDFs are still viewable.
 
 For failed OSC jobs, check the job folder in `job_data/jobs/<job-id>/`:
