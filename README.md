@@ -141,6 +141,26 @@ Each Slurm job records the `slurm_job_id`, generated script, container command,
 logs, and outputs under its `job_data/jobs/<job-id>/` folder. The GUI Jobs tab
 uses the same API for local CPU and OSC GPU jobs.
 
+## V1 test checklist
+
+Before considering the CPU/GPU container and GUI backend v1 complete, run these
+small cases and confirm each completed job can be loaded from the Jobs tab into
+Results:
+
+1. Local CPU pocket-only job with `xxxx/xxxx_pocket.pdb`.
+2. Local CPU protein plus reference ligand job with `4aua_protein.pdb` and
+   `4aua_ligand.sdf`.
+3. OSC GPU Slurm pocket-only job with `xxxx/xxxx_pocket.pdb`.
+4. OSC GPU Slurm protein plus reference ligand job with `4aua_protein.pdb` and
+   `4aua_ligand.sdf`.
+5. Restart `serve.py`, refresh the Jobs tab, and confirm completed jobs and
+   generated SDFs are still viewable.
+
+For failed OSC jobs, check the job folder in `job_data/jobs/<job-id>/`:
+`run.slurm`, `logs/stdout.log`, `logs/stderr.log`, `logs/sbatch.stderr.log`, and
+`logs/exit_code.txt` usually identify whether the issue is Slurm submission,
+container image loading, GPU visibility, or conDitar runtime behavior.
+
 ## Startup scripts
 
 macOS or Linux:

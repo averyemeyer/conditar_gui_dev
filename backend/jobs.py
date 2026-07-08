@@ -421,6 +421,10 @@ class LocalJobManager:
         if self.docker_tar:
             image_check = "\n".join([
                 f"if ! {podman_command} image exists {shlex.quote(self.docker_image)}; then",
+                f"  if [[ ! -f {shlex.quote(self.docker_tar)} ]]; then",
+                f"    echo \"Container image archive not found: {shlex.quote(self.docker_tar)}\" >&2",
+                "    exit 127",
+                "  fi",
                 f"  {podman_command} load -i {shlex.quote(self.docker_tar)}",
                 "fi",
             ])
