@@ -137,6 +137,12 @@ the image is missing:
 CONDITAR_DOCKER_TAR=/fs/ess/PCON0041/path/to/conditar-dev-docker.tar
 ```
 
+On OSC, `start_osc_gui.sh` defaults this to:
+
+```bash
+/fs/ess/PCON0041/mey200/container_images/conditar-dev-docker-vina.tar
+```
+
 Each Slurm job records the `slurm_job_id`, generated script, container command,
 logs, and outputs under its `job_data/jobs/<job-id>/` folder. The GUI Jobs tab
 uses the same API for local CPU and OSC GPU jobs.
