@@ -176,6 +176,19 @@ class LocalJobManager:
 
     def results(self, job_id: str) -> dict:
         paths = self._paths(job_id)
+        job = self._read_job(job_id) or {}
+        inputs = {}
+        for key in ("pdb", "sdf"):
+            relative = (job.get("inputs") or {}).get(key)
+            if not relative:
+                continue
+            path = paths.root / relative
+            if path.exists():
+                inputs[key] = {
+                    "name": path.name,
+                    "relative_path": str(path.relative_to(paths.root)),
+                    "text": path.read_text(errors="replace"),
+                }
         files = []
         if paths.outputs.exists():
             for path in sorted(paths.outputs.rglob("*.sdf")):
@@ -184,7 +197,7 @@ class LocalJobManager:
                     "relative_path": str(path.relative_to(paths.root)),
                     "text": path.read_text(errors="replace"),
                 })
-        return {"job_id": job_id, "files": files}
+        return {"job_id": job_id, "inputs": inputs, "files": files}
 
     def cancel(self, job_id: str) -> dict:
         job = self.get_job(job_id)

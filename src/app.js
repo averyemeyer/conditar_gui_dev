@@ -269,18 +269,26 @@ async function pollJob(jobId) {
 }
 
 async function loadCompletedJob(job) {
-  const candidates = await service.loadJobResults(job);
+  const result = await service.loadJobResults(job);
+  const candidates = result.candidates || [];
   if (!candidates.length) {
     showToast("Job completed but no SDF results were found.");
     return;
   }
+  const fallbackExample = state.study?.example || EXAMPLES[state.exampleId] || EXAMPLES["4aua"];
+  const pdbInput = result.inputs?.pdb || null;
+  const sdfInput = result.inputs?.sdf || null;
   state.study = {
     ...state.study,
     example: {
-      ...(state.study?.example || EXAMPLES[state.exampleId] || EXAMPLES["4aua"]),
+      ...fallbackExample,
       id: job.id,
       label: job.id,
+      pdb: pdbInput?.name || fallbackExample.pdb,
+      sdf: sdfInput?.name || fallbackExample.sdf,
     },
+    pdbText: pdbInput?.text || state.study?.pdbText || "",
+    referenceSdf: sdfInput?.text || state.study?.referenceSdf || null,
     candidates,
   };
   state.currentJob = job;
@@ -614,8 +622,8 @@ async function downloadAll() {
   state.study.candidates.forEach((item) => structures.file(item.name, item.text));
   zip.file("metrics.csv", csvText());
   zip.file("run_config.json", JSON.stringify(buildConfiguration(), null, 2));
-  zip.file(state.study.example.pdb.split("/").pop(), state.study.pdbText);
-  if (state.study.referenceSdf) zip.file(state.study.example.sdf.split("/").pop(), state.study.referenceSdf);
+  if (state.study.pdbText) zip.file(filenameOnly(state.study.example.pdb || "input.pdb"), state.study.pdbText);
+  if (state.study.referenceSdf) zip.file(filenameOnly(state.study.example.sdf || "reference.sdf"), state.study.referenceSdf);
   const blob = await zip.generateAsync({ type: "blob" });
   downloadBlob(blob, `${studyName()}_study.zip`, "application/zip");
   button.disabled = false;
@@ -678,6 +686,10 @@ function csvCell(value) {
 
 function studyName() {
   return state.study?.example?.id || "conditar";
+}
+
+function filenameOnly(path) {
+  return String(path || "").split("/").pop() || "conditar_input";
 }
 
 function downloadBlob(content, filename, type) {
