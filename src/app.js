@@ -1,7 +1,7 @@
-import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js";
-import { drawHistogram } from "./charts.js";
-import { ExampleDataService } from "./data-service.js";
-import { render2D, render3D } from "./viewers.js";
+import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260709-results-fix";
+import { drawHistogram } from "./charts.js?v=20260709-results-fix";
+import { ExampleDataService } from "./data-service.js?v=20260709-results-fix";
+import { render2D, render3D } from "./viewers.js?v=20260709-results-fix";
 
 const service = new ExampleDataService();
 const state = {
