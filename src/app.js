@@ -1,5 +1,5 @@
 import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js";
-import { drawHistogram, drawScatter } from "./charts.js";
+import { drawHistogram } from "./charts.js";
 import { ExampleDataService } from "./data-service.js";
 import { render2D, render3D } from "./viewers.js";
 
@@ -245,10 +245,8 @@ function buildPostprocessPayload() {
 async function pollJob(jobId) {
   clearTimeout(state.jobPollTimer);
   try {
-    const [job, logs] = await Promise.all([
-      service.getJob(jobId),
-      service.getJobLogs(jobId),
-    ]);
+    const job = await service.getJob(jobId);
+    const logs = await service.getJobLogs(jobId).catch(() => ({ stdout: "", stderr: "" }));
     state.currentJob = job;
     state.selectedJob = job;
     updateJobPanel(job, logs.stdout || logs.stderr || "Waiting for job output.");
@@ -337,8 +335,8 @@ function renderJobsTable() {
     if (!job) return;
     state.selectedJob = job;
     renderJobsTable();
-    const logs = await service.getJobLogs(job.id).catch(() => ({ stdout: "", stderr: "Unable to load logs." }));
-    updateJobDetail(job, logs.stdout || logs.stderr || "No logs yet.");
+    const logs = await service.getJobLogs(job.id).catch(() => ({ stdout: "", stderr: "" }));
+    updateJobDetail(job, logs.stdout || logs.stderr || "Logs are not available for this job yet.");
     if (event.target.closest(".load-job-results")) {
       await loadSelectedJobResults(job.id);
     }
@@ -376,6 +374,30 @@ function renderSummary() {
     cards.push(["Mean Vina score", formatMetric(average("vinaScore")), "kcal/mol"]);
   }
   $("#metric-strip").innerHTML = cards.map(([label, value, unit]) => `<div class="metric-card"><span>${label}</span><strong>${value}</strong><small>${unit}</small></div>`).join("");
+  renderQualitySummary(candidates);
+}
+
+function renderQualitySummary(candidates) {
+  const vinaValues = numericValues(candidates, "vinaScore");
+  const qedValues = propertyValues(candidates, "QED");
+  const saValues = propertyValues(candidates, "SA");
+  const logpValues = propertyValues(candidates, "LOGP");
+  const lipinskiValues = propertyValues(candidates, "LIPINSKI");
+  const uniqueFormulas = new Set(candidates.map((item) => item.formula).filter(Boolean)).size;
+  const scored = candidates.filter((item) => item.properties?.VINA_STATUS === "ok" || item.vinaScore !== null).length;
+  const lipinskiPasses = lipinskiValues.filter((value) => value >= 4).length;
+  const bestVina = vinaValues.length ? Math.min(...vinaValues) : null;
+  const rows = [
+    ["Scored by Vina", scored ? `${scored}/${candidates.length}` : "Not run"],
+    ["Best Vina", bestVina === null ? "n/a" : `${formatMetric(bestVina)} kcal/mol`],
+    ["QED range", rangeLabel(qedValues)],
+    ["SA range", rangeLabel(saValues)],
+    ["LogP range", rangeLabel(logpValues)],
+    ["Lipinski >=4", lipinskiValues.length ? `${lipinskiPasses}/${lipinskiValues.length}` : "n/a"],
+    ["Unique formulas", candidates.length ? `${uniqueFormulas}/${candidates.length}` : "n/a"],
+    ["Ring-containing", candidates.length ? `${candidates.filter((item) => item.rings > 0).length}/${candidates.length}` : "n/a"],
+  ];
+  $("#quality-summary").innerHTML = rows.map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join("");
 }
 
 function filteredCandidates() {
@@ -408,7 +430,6 @@ function renderCharts() {
   const metric = $("#histogram-metric").value;
   const label = $("#histogram-metric").selectedOptions[0].textContent;
   drawHistogram($("#histogram"), numericValues(state.study.candidates, metric), label);
-  drawScatter($("#scatterplot"), state.study.candidates, state.selected?.index);
 }
 
 function renderSelectedStructure() {
@@ -421,6 +442,9 @@ function renderSelectedStructure() {
     ["Heavy atoms", molecule.heavyAtoms],
     ["Rings", molecule.rings],
   ];
+  if (molecule.smiles) {
+    metrics.push(["SMILES", molecule.smiles]);
+  }
   if (molecule.vinaScore !== null) {
     metrics.push(["Vina", formatMetric(molecule.vinaScore)]);
   }
@@ -488,6 +512,15 @@ function formatMetric(value, digits = 2) {
 
 function numericValues(items, key) {
   return items.map((item) => Number(item[key])).filter(Number.isFinite);
+}
+
+function propertyValues(items, key) {
+  return items.map((item) => Number.parseFloat(item.properties?.[key])).filter(Number.isFinite);
+}
+
+function rangeLabel(values) {
+  if (!values.length) return "n/a";
+  return `${formatMetric(Math.min(...values))} to ${formatMetric(Math.max(...values))}`;
 }
 
 function compareMetric(a, b) {
@@ -608,6 +641,7 @@ function csvText() {
   const header = [
     "candidate",
     "source_file",
+    "smiles",
     "formula",
     "molecular_weight",
     "atom_count",
@@ -622,6 +656,7 @@ function csvText() {
   const rows = state.study.candidates.map((item) => [
     item.id,
     item.name,
+    item.smiles || item.properties?.SMILES || "",
     item.formula,
     item.molecularWeight,
     item.atomCount,

@@ -41,11 +41,13 @@ export function parseSdf(text, name = "molecule.sdf") {
   const rings = Math.max(0, bonds.length - atoms.length + components);
   const properties = parseProperties(lines);
   const vinaScore = numericProperty(properties, "VINA_SCORE_ONLY");
+  const smiles = properties.SMILES || "";
 
   return {
     name,
     text,
     properties,
+    smiles,
     vinaScore,
     atoms,
     bonds,

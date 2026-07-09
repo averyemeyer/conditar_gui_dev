@@ -63,6 +63,7 @@ class LocalJobManager:
             project_root.parent / "conDitar-dev" / "conditar-dev.sif",
         )).expanduser()
         self.docker_image = os.environ.get("CONDITAR_DOCKER_IMAGE", "localhost/conditar-dev:container-dev")
+        self.source_mount = os.environ.get("CONDITAR_SOURCE_MOUNT", "").strip()
         self.container_runtime_kind, self.container_runtime = self._resolve_container_runtime()
         self.default_tmp = Path(os.environ.get("CONDITAR_TMP", "/tmp/conditar-gui"))
         self.sbatch_bin = os.environ.get("SBATCH_BIN") or shutil.which("sbatch")
@@ -139,6 +140,7 @@ class LocalJobManager:
                 "backend": "slurm_podman" if target == "osc_gpu" else self.container_runtime_kind,
                 "runtime": os.environ.get("PODMAN_BIN", "podman") if target == "osc_gpu" else self.container_runtime,
                 "docker_image": self.docker_image if target == "osc_gpu" or self.container_runtime_kind in {"docker", "podman"} else None,
+                "source_mount": self.source_mount or None,
                 "sif": str(self.sif_path) if self.container_runtime_kind in {"apptainer", "singularity"} else None,
             },
             "command": command,
@@ -293,6 +295,10 @@ class LocalJobManager:
             f"{paths.outputs.resolve()}:/results",
             "-v",
             f"{tmp_dir.resolve()}:/tmp/conditar",
+        ])
+        if self.source_mount:
+            command.extend(["-v", f"{Path(self.source_mount).expanduser().resolve()}:/opt/conditar/app:ro"])
+        command.extend([
             self.docker_image,
             "--pdb",
             f"/inputs/{pdb_path.name}",

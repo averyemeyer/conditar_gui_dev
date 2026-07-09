@@ -64,6 +64,18 @@ Override it when needed:
 CONDITAR_DOCKER_IMAGE=my-registry/conditar-dev:tag CONDITAR_RUNTIME=docker python3 serve.py --open
 ```
 
+During development, keep the container environment/checkpoints fixed but run the
+latest checked-out conDitar source by bind-mounting the repo over the image copy:
+
+```bash
+CONDITAR_SOURCE_MOUNT=/path/to/conDitar-dev CONDITAR_RUNTIME=docker python3 serve.py --open
+```
+
+This avoids rebuilding the image for source-only edits. Rebuild the image when
+dependencies, model/checkpoint files, or container setup changes. The OSC helper
+script automatically uses `../conDitar-dev` as `CONDITAR_SOURCE_MOUNT` when that
+sibling checkout exists.
+
 Runtime selection:
 
 - `CONDITAR_RUNTIME=auto` prefers Podman, then Docker, then Apptainer/Singularity.

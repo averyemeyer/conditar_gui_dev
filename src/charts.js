@@ -33,31 +33,6 @@ export function drawHistogram(canvas, values, label) {
   });
 }
 
-export function drawScatter(canvas, candidates, selectedIndex) {
-  const { ctx, width, height } = prepare(canvas);
-  ctx.clearRect(0, 0, width, height);
-  if (!candidates.length) return;
-  const xs = candidates.map((item) => item.heavyAtoms);
-  const ys = candidates.map((item) => item.molecularWeight);
-  const minX = Math.min(...xs) - 1;
-  const maxX = Math.max(...xs) + 1;
-  const minY = Math.min(...ys) - 10;
-  const maxY = Math.max(...ys) + 10;
-  const pad = { left: 44, right: 14, top: 16, bottom: 34 };
-  const plotW = width - pad.left - pad.right;
-  const plotH = height - pad.top - pad.bottom;
-  drawAxes(ctx, width, height, pad, minX.toFixed(0), maxX.toFixed(0), "Heavy atoms");
-  candidates.forEach((item) => {
-    const x = pad.left + ((item.heavyAtoms - minX) / (maxX - minX || 1)) * plotW;
-    const y = pad.top + plotH - ((item.molecularWeight - minY) / (maxY - minY || 1)) * plotH;
-    const selected = item.index === selectedIndex;
-    ctx.beginPath();
-    ctx.arc(x, y, selected ? 5 : 3, 0, Math.PI * 2);
-    ctx.fillStyle = selected ? "#c96c46" : "rgba(47, 125, 104, .55)";
-    ctx.fill();
-  });
-}
-
 function prepare(canvas) {
   const ratio = window.devicePixelRatio || 1;
   const width = canvas.clientWidth;

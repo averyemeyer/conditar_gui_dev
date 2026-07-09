@@ -207,7 +207,7 @@
         <div class="metric-strip" id="metric-strip"></div>
 
         <details class="analytics-details">
-          <summary><span><strong>Dataset charts</strong><small>Property distributions and chemical space</small></span><b>Show charts</b></summary>
+          <summary><span><strong>Dataset analysis</strong><small>Property distributions and run-level quality checks</small></span><b>Show analysis</b></summary>
           <div class="analytics-grid">
             <article class="panel chart-panel">
               <div class="panel-heading"><div><h3>Property distribution</h3></div>
@@ -222,8 +222,8 @@
               <canvas id="histogram" height="140" aria-label="Property distribution chart"></canvas>
             </article>
             <article class="panel chart-panel">
-              <div class="panel-heading"><div><h3>Chemical space</h3></div><span class="chart-key"><i></i> Candidates</span></div>
-              <canvas id="scatterplot" height="140" aria-label="Molecular weight by heavy atom chart"></canvas>
+              <div class="panel-heading"><div><h3>Quality summary</h3></div><span class="chart-key">Current results</span></div>
+              <div class="quality-summary" id="quality-summary" aria-label="Generated molecule quality summary"></div>
             </article>
           </div>
         </details>
@@ -301,6 +301,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/3dmol@2.4.2/build/3Dmol-min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script type="module" src="./src/app.js"></script>
+  <script type="module" src="./src/app.js?v=20260709-smiles-csv"></script>
 </body>
 </html>

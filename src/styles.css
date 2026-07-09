@@ -136,7 +136,7 @@ select, input[type="text"], input[type="number"], input[type="search"] { border:
 .analytics-details > summary small { color: var(--muted); font-size: 10px; font-weight: 400; }
 .analytics-details > summary b { color: var(--accent-dark); font-size: 11px; }
 .analytics-details[open] > summary b { font-size: 0; }
-.analytics-details[open] > summary b::after { content: "Hide charts"; font-size: 11px; }
+.analytics-details[open] > summary b::after { content: "Hide analysis"; font-size: 11px; }
 .viewer-options > summary { color: var(--accent-dark); font-size: 11px; font-weight: 700; cursor: pointer; list-style: none; }
 .viewer-options > summary::before { content: "+"; margin-right: 7px; font-family: "DM Mono"; }
 .viewer-options[open] > summary::before { content: "−"; }
@@ -145,6 +145,10 @@ select, input[type="text"], input[type="number"], input[type="search"] { border:
 .chart-panel canvas { width: 100%; height: 140px !important; display: block; }
 .compact-select { height: 34px; padding: 0 9px; color: var(--muted); font-size: 10px; }
 .chart-key i { width: 7px; height: 7px; display: inline-block; margin-right: 6px; border-radius: 50%; background: var(--accent); }
+.quality-summary { min-height: 140px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.quality-summary div { min-height: 31px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fbfcfb; }
+.quality-summary span { display: block; margin-bottom: 3px; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
+.quality-summary strong { color: var(--ink); font: 500 11px "DM Mono"; }
 .explorer-grid { display: grid; grid-template-columns: 330px 1fr; gap: 16px; min-height: 610px; }
 .result-list-panel { min-height: 0; display: flex; flex-direction: column; }
 .list-tools { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 13px; }
@@ -174,9 +178,10 @@ tbody tr:hover, tbody tr.active { background: var(--accent-soft); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .viewer-error { padding: 30px; color: #8b4b33; }
 .viewer-footer { min-height: 82px; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-top: 1px solid var(--line); background: var(--paper); }
-.selected-metrics { display: flex; gap: 28px; }
+.selected-metrics { display: flex; gap: 28px; min-width: 0; }
+.selected-metrics div { min-width: 0; max-width: 280px; }
 .selected-metrics span { display: block; color: var(--muted); font-size: 9px; text-transform: uppercase; }
-.selected-metrics strong { font: 500 14px "DM Mono"; }
+.selected-metrics strong { font: 500 14px "DM Mono"; overflow-wrap: anywhere; }
 .viewer-options { position: relative; text-align: right; }
 .viewer-controls { display: flex; gap: 10px; padding-top: 10px; }
 .viewer-controls label { color: var(--muted); font-size: 9px; text-transform: uppercase; }
