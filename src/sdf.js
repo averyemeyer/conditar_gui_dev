@@ -40,7 +40,7 @@ export function parseSdf(text, name = "molecule.sdf") {
   const components = connectedComponents(atoms.length, bonds);
   const rings = Math.max(0, bonds.length - atoms.length + components);
   const properties = parseProperties(lines);
-  const vinaScore = numericProperty(properties, "VINA_SCORE_ONLY");
+  const vinaScore = firstNumericProperty(properties, ["VINA_SCORE_ONLY", "VINA_MINIMIZE", "VINA_DOCK"]);
   const smiles = properties.SMILES || "";
 
   return {
@@ -63,7 +63,7 @@ export function parseSdf(text, name = "molecule.sdf") {
 function parseProperties(lines) {
   const properties = {};
   for (let i = 0; i < lines.length; i += 1) {
-    const match = lines[i].match(/^>\s+<([^>]+)>/);
+    const match = lines[i].match(/^>\s*<([^>]+)>/);
     if (!match) continue;
     const values = [];
     i += 1;
@@ -79,6 +79,14 @@ function parseProperties(lines) {
 function numericProperty(properties, key) {
   const value = Number.parseFloat(properties[key]);
   return Number.isFinite(value) ? value : null;
+}
+
+function firstNumericProperty(properties, keys) {
+  for (const key of keys) {
+    const value = numericProperty(properties, key);
+    if (value !== null) return value;
+  }
+  return null;
 }
 
 function connectedComponents(atomCount, bonds) {

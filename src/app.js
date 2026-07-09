@@ -1,7 +1,7 @@
-import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260709-2d-layout";
-import { drawHistogram } from "./charts.js?v=20260709-2d-layout";
-import { ExampleDataService } from "./data-service.js?v=20260709-2d-layout";
-import { render2D, render3D } from "./viewers.js?v=20260709-2d-layout";
+import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260709-vina-display";
+import { drawHistogram } from "./charts.js?v=20260709-vina-display";
+import { ExampleDataService } from "./data-service.js?v=20260709-vina-display";
+import { render2D, render3D } from "./viewers.js?v=20260709-vina-display";
 
 const service = new ExampleDataService();
 const state = {
@@ -456,8 +456,17 @@ function renderSelectedStructure() {
   if (molecule.vinaScore !== null) {
     metrics.push(["Vina", formatMetric(molecule.vinaScore)]);
   }
+  if (molecule.properties?.VINA_SCORE_ONLY && molecule.vinaScore === null) {
+    metrics.push(["Vina score", formatMetric(Number.parseFloat(molecule.properties.VINA_SCORE_ONLY))]);
+  }
   if (molecule.properties?.VINA_MINIMIZE) {
     metrics.push(["Vina min", formatMetric(Number.parseFloat(molecule.properties.VINA_MINIMIZE))]);
+  }
+  if (molecule.properties?.VINA_DOCK) {
+    metrics.push(["Vina dock", formatMetric(Number.parseFloat(molecule.properties.VINA_DOCK))]);
+  }
+  if (molecule.properties?.VINA_STATUS) {
+    metrics.push(["Vina status", molecule.properties.VINA_STATUS]);
   }
   $("#selected-metrics").innerHTML = metrics.map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join("");
   render2D($("#viewer-2d"), molecule);
