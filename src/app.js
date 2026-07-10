@@ -1,7 +1,7 @@
-import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260709-vina-display";
-import { drawHistogram } from "./charts.js?v=20260709-vina-display";
-import { ExampleDataService } from "./data-service.js?v=20260709-vina-display";
-import { render2D, render3D } from "./viewers.js?v=20260709-vina-display";
+import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260710-qvina-modes";
+import { drawHistogram } from "./charts.js?v=20260710-qvina-modes";
+import { ExampleDataService } from "./data-service.js?v=20260710-qvina-modes";
+import { render2D, render3D } from "./viewers.js?v=20260710-qvina-modes";
 
 const service = new ExampleDataService();
 const state = {
@@ -398,7 +398,7 @@ function renderSummary() {
     ["Ring-containing", candidates.filter((item) => item.rings > 0).length, "molecules"],
   ];
   if (numericValues(candidates, "vinaScore").length) {
-    cards.push(["Mean Vina score", formatMetric(average("vinaScore")), "kcal/mol"]);
+    cards.push(["Mean docking score", formatMetric(average("vinaScore")), "kcal/mol"]);
   }
   $("#metric-strip").innerHTML = cards.map(([label, value, unit]) => `<div class="metric-card"><span>${label}</span><strong>${value}</strong><small>${unit}</small></div>`).join("");
   renderQualitySummary(candidates);
@@ -415,8 +415,8 @@ function renderQualitySummary(candidates) {
   const lipinskiPasses = lipinskiValues.filter((value) => value >= 4).length;
   const bestVina = vinaValues.length ? Math.min(...vinaValues) : null;
   const rows = [
-    ["Scored by Vina", scored ? `${scored}/${candidates.length}` : "Not run"],
-    ["Best Vina", bestVina === null ? "n/a" : `${formatMetric(bestVina)} kcal/mol`],
+    ["Scored by docking", scored ? `${scored}/${candidates.length}` : "Not run"],
+    ["Best docking", bestVina === null ? "n/a" : `${formatMetric(bestVina)} kcal/mol`],
     ["QED range", rangeLabel(qedValues)],
     ["SA range", rangeLabel(saValues)],
     ["LogP range", rangeLabel(logpValues)],
@@ -473,7 +473,7 @@ function renderSelectedStructure() {
     metrics.push(["SMILES", molecule.smiles]);
   }
   if (molecule.vinaScore !== null) {
-    metrics.push(["Vina", formatMetric(molecule.vinaScore)]);
+    metrics.push(["Docking", formatMetric(molecule.vinaScore)]);
   }
   if (molecule.properties?.VINA_SCORE_ONLY && molecule.vinaScore === null) {
     metrics.push(["Vina score", formatMetric(Number.parseFloat(molecule.properties.VINA_SCORE_ONLY))]);
@@ -483,6 +483,9 @@ function renderSelectedStructure() {
   }
   if (molecule.properties?.VINA_DOCK) {
     metrics.push(["Vina dock", formatMetric(Number.parseFloat(molecule.properties.VINA_DOCK))]);
+  }
+  if (molecule.properties?.QVINA) {
+    metrics.push(["QVina", formatMetric(Number.parseFloat(molecule.properties.QVINA))]);
   }
   if (molecule.properties?.VINA_STATUS) {
     metrics.push(["Vina status", molecule.properties.VINA_STATUS]);
@@ -784,6 +787,7 @@ function csvText() {
     "vina_score_only",
     "vina_minimize",
     "vina_dock",
+    "qvina",
     "vina_status",
   ];
   const rows = state.study.candidates.map((item) => [
@@ -799,6 +803,7 @@ function csvText() {
     item.properties?.VINA_SCORE_ONLY || "",
     item.properties?.VINA_MINIMIZE || "",
     item.properties?.VINA_DOCK || "",
+    item.properties?.QVINA || "",
     item.properties?.VINA_STATUS || "",
   ]);
   return [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");

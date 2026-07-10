@@ -1,5 +1,5 @@
-import { EXAMPLES } from "./config.js?v=20260709-vina-display";
-import { candidateId, parseSdf } from "./sdf.js?v=20260709-vina-display";
+import { EXAMPLES } from "./config.js?v=20260710-qvina-modes";
+import { candidateId, parseSdf } from "./sdf.js?v=20260710-qvina-modes";
 
 export class ExampleDataService {
   async loadStudy(exampleId, onProgress = () => {}) {

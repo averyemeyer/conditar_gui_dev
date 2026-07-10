@@ -390,8 +390,8 @@ class LocalJobManager:
     def _postprocess_options(self, payload_options: dict) -> dict:
         vina_enabled = bool(payload_options.get("vina"))
         vina_mode = str(payload_options.get("vina_mode") or "vina_score").strip()
-        if vina_mode not in {"vina_score", "vina_dock"}:
-            raise ValueError("Vina mode must be vina_score or vina_dock.")
+        if vina_mode not in {"none", "vina_score", "vina_dock", "qvina", "all"}:
+            raise ValueError("Vina mode must be none, vina_score, vina_dock, qvina, or all.")
         return {
             "vina": vina_enabled,
             "vina_mode": vina_mode,

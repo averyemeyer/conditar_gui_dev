@@ -147,10 +147,13 @@
             </label>
             <div class="vina-options" id="vina-options" hidden>
               <div>
-                <label class="field-label" for="vina-mode">Vina mode</label>
+                <label class="field-label" for="vina-mode">Scoring mode</label>
                 <select id="vina-mode">
-                  <option value="vina_score">Score + minimize</option>
-                  <option value="vina_dock">Dock</option>
+                  <option value="vina_score">Vina score + minimize</option>
+                  <option value="vina_dock">Vina dock</option>
+                  <option value="qvina">QVina</option>
+                  <option value="all">All available</option>
+                  <option value="none">Chemistry only</option>
                 </select>
               </div>
               <div>
@@ -222,7 +225,7 @@
                   <option value="heavyAtoms">Heavy atoms</option>
                   <option value="heteroAtoms">Hetero atoms</option>
                   <option value="rings">Ring estimate</option>
-                  <option value="vinaScore">Vina score</option>
+                  <option value="vinaScore">Docking score</option>
                 </select>
               </div>
               <canvas id="histogram" height="140" aria-label="Property distribution chart"></canvas>
@@ -247,12 +250,12 @@
                 <option value="molecularWeight">Molecular weight</option>
                 <option value="heavyAtoms">Heavy atoms</option>
                 <option value="rings">Ring estimate</option>
-                <option value="vinaScore">Vina score</option>
+                <option value="vinaScore">Docking score</option>
               </select>
             </div>
             <div class="result-table-wrap">
               <table>
-                <thead><tr><th>Candidate</th><th>MW</th><th>Rings</th><th>Vina</th></tr></thead>
+                <thead><tr><th>Candidate</th><th>MW</th><th>Rings</th><th>Score</th></tr></thead>
                 <tbody id="result-table"></tbody>
               </table>
             </div>
@@ -307,6 +310,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script async src="https://cdn.jsdelivr.net/npm/3dmol@2.4.2/build/3Dmol-min.js"></script>
   <script async src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script type="module" src="./src/app.js?v=20260709-vina-display"></script>
+  <script type="module" src="./src/app.js?v=20260710-qvina-modes"></script>
 </body>
 </html>

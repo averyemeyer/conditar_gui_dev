@@ -40,7 +40,7 @@ export function parseSdf(text, name = "molecule.sdf") {
   const components = connectedComponents(atoms.length, bonds);
   const rings = Math.max(0, bonds.length - atoms.length + components);
   const properties = parseProperties(lines);
-  const vinaScore = firstNumericProperty(properties, ["VINA_SCORE_ONLY", "VINA_MINIMIZE", "VINA_DOCK"]);
+  const vinaScore = firstNumericProperty(properties, ["VINA_SCORE_ONLY", "VINA_MINIMIZE", "VINA_DOCK", "QVINA"]);
   const smiles = properties.SMILES || "";
 
   return {
