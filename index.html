@@ -74,6 +74,12 @@
               <div><strong id="sdf-name">4aua_ligand.sdf</strong><span id="sdf-detail">Reference ligand · bundled example</span></div>
               <button class="text-button" type="button">Replace</button>
             </div>
+            <div class="dropzone folder-dropzone" id="folder-dropzone">
+              <input id="folder-input" type="file" webkitdirectory directory multiple>
+              <div class="file-icon">DIR</div>
+              <div><strong id="folder-name">Batch folders</strong><span id="folder-detail">Optional: one PDB and optional SDF per folder</span></div>
+              <button class="text-button" type="button">Choose</button>
+            </div>
             <p class="field-note" id="mode-note">The reference ligand defines the generation center. Pocket radius controls the surrounding protein context.</p>
           </article>
 
@@ -299,8 +305,8 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="https://cdn.jsdelivr.net/npm/3dmol@2.4.2/build/3Dmol-min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script async src="https://cdn.jsdelivr.net/npm/3dmol@2.4.2/build/3Dmol-min.js"></script>
+  <script async src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script type="module" src="./src/app.js?v=20260709-vina-display"></script>
 </body>
 </html>

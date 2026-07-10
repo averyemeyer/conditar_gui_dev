@@ -12,23 +12,31 @@ export class ExampleDataService {
     ]);
 
     let loaded = 0;
-    const candidates = (await Promise.all(Array.from({ length: example.count }, async (_, index) => {
-      const preferred = `${example.outputRoot}/${example.outputStem}${index}.sdf`;
-      const fallback = example.outputFallbackStem
-        ? `${example.outputRoot}/${example.outputFallbackStem}${index}.sdf`
-        : null;
-      let path = preferred;
-      let text = await fetchText(preferred, false);
-      if (!text && fallback) {
-        path = fallback;
-        text = await fetchText(fallback, false);
-      }
-      loaded += 1;
-      onProgress(loaded, example.count);
-      if (!text) return null;
-      const molecule = parseSdf(text, path.split("/").pop());
-      return { ...molecule, index, id: candidateId(index), path };
-    }))).filter(Boolean).sort((a, b) => a.index - b.index);
+    const candidates = [];
+    const indexes = Array.from({ length: example.count }, (_, index) => index);
+    for (let offset = 0; offset < indexes.length; offset += 12) {
+      const batch = indexes.slice(offset, offset + 12);
+      const batchCandidates = await Promise.all(batch.map(async (index) => {
+        const preferred = `${example.outputRoot}/${example.outputStem}${index}.sdf`;
+        const fallback = example.outputFallbackStem
+          ? `${example.outputRoot}/${example.outputFallbackStem}${index}.sdf`
+          : null;
+        let path = preferred;
+        let text = await fetchText(preferred, false);
+        if (!text && fallback) {
+          path = fallback;
+          text = await fetchText(fallback, false);
+        }
+        loaded += 1;
+        onProgress(loaded, example.count);
+        if (!text) return null;
+        const molecule = parseSdf(text, path.split("/").pop());
+        return { ...molecule, index, id: candidateId(index), path };
+      }));
+      candidates.push(...batchCandidates.filter(Boolean));
+      await yieldToBrowser();
+    }
+    candidates.sort((a, b) => a.index - b.index);
 
     return { example, pdbText, referenceSdf, candidates };
   }
@@ -47,6 +55,14 @@ export class ExampleDataService {
       body: JSON.stringify(payload),
     });
     return response.job;
+  }
+
+  async submitBatch(payload) {
+    return fetchJson("/api/jobs/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
   }
 
   async listJobs() {
@@ -84,6 +100,16 @@ async function fetchText(path, required = true) {
     return null;
   }
   return response.text();
+}
+
+function yieldToBrowser() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
 }
 
 async function fetchJson(path, options = {}) {

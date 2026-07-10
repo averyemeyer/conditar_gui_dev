@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import shlex
 import shutil
 import smtplib
@@ -17,6 +18,7 @@ from pathlib import Path
 
 
 TERMINAL_STATES = {"completed", "failed", "canceled"}
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 SLURM_PENDING_STATES = {"CONFIGURING", "PENDING", "REQUEUED", "RESIZING", "SUSPENDED"}
 SLURM_RUNNING_STATES = {"COMPLETING", "RUNNING", "STAGE_OUT"}
 SLURM_SUCCESS_STATES = {"COMPLETED"}
@@ -87,6 +89,7 @@ class LocalJobManager:
         self._worker.start()
 
     def submit(self, payload: dict) -> dict:
+        payload = self._validated_payload(payload)
         target = payload.get("target", "local_cpu")
         if target not in {"local_cpu", "osc_gpu"}:
             raise ValueError("Only local_cpu and osc_gpu jobs are supported.")
@@ -126,6 +129,7 @@ class LocalJobManager:
             "email": payload.get("email") or None,
             "mode": payload.get("mode") or "pocket",
             "example_id": payload.get("example_id") or None,
+            "input_name": payload.get("input_name") or pdb_name,
             "inputs": {
                 "pdb": str(pdb_path.relative_to(paths.root)),
                 "sdf": str(sdf_path.relative_to(paths.root)) if sdf_path else None,
@@ -153,6 +157,24 @@ class LocalJobManager:
         else:
             self._queue.put(job_id)
         return job
+
+    def submit_batch(self, payload: dict) -> dict:
+        jobs_payload = payload.get("jobs")
+        if not isinstance(jobs_payload, list) or not jobs_payload:
+            raise ValueError("Batch submission requires a non-empty jobs list.")
+        if len(jobs_payload) > 100:
+            raise ValueError("Batch submission is limited to 100 jobs at a time.")
+
+        submitted = []
+        errors = []
+        for index, job_payload in enumerate(jobs_payload, start=1):
+            try:
+                submitted.append(self.submit(job_payload))
+            except Exception as error:
+                errors.append({"index": index, "input_name": job_payload.get("input_name"), "error": str(error)})
+        if not submitted and errors:
+            raise ValueError("; ".join(item["error"] for item in errors[:3]))
+        return {"jobs": submitted, "errors": errors}
 
     def list_jobs(self) -> list[dict]:
         jobs = [self._refresh_job(self._read_job(path.parent.name)) for path in self.job_root.glob("*/job.json")]
@@ -220,6 +242,7 @@ class LocalJobManager:
         job["status"] = "canceled"
         job["finished_at"] = utc_now()
         self._write_job(self._paths(job_id), job)
+        self._send_email(job, self._paths(job_id))
         return job
 
     def _build_command(
@@ -375,6 +398,82 @@ class LocalJobManager:
             "vina_exhaustiveness": str(payload_options.get("vina_exhaustiveness") or "8").strip(),
             "vina_cpu": str(payload_options.get("vina_cpu") or "4").strip(),
         }
+
+    def _validated_payload(self, payload: dict) -> dict:
+        if not isinstance(payload, dict):
+            raise ValueError("Job payload must be a JSON object.")
+        payload = dict(payload)
+        payload["email"] = self._validated_email(payload.get("email"))
+        payload["mode"] = self._validated_choice(payload.get("mode") or "pocket", {"reference", "pocket"}, "mode")
+        payload["parameters"] = self._validated_parameters(payload.get("parameters") or {})
+        if payload.get("slurm"):
+            payload["slurm"] = self._slurm_options(payload["slurm"])
+        if payload.get("input_name"):
+            payload["input_name"] = safe_name(str(payload["input_name"]), "input")
+
+        pdb = payload.get("pdb") or {}
+        if not isinstance(pdb, dict) or not str(pdb.get("text") or "").strip():
+            raise ValueError("A PDB input is required.")
+        pdb_text = str(pdb["text"])
+        if len(pdb_text.encode("utf-8")) > 50 * 1024 * 1024:
+            raise ValueError("PDB input is larger than 50 MB.")
+        if not self._looks_like_pdb(pdb_text):
+            raise ValueError("PDB input does not look like a PDB file.")
+        payload["pdb"] = {"name": safe_name(str(pdb.get("name") or "input.pdb"), "input.pdb"), "text": pdb_text}
+
+        sdf = payload.get("sdf")
+        if sdf and isinstance(sdf, dict) and str(sdf.get("text") or "").strip():
+            sdf_text = str(sdf["text"])
+            if len(sdf_text.encode("utf-8")) > 50 * 1024 * 1024:
+                raise ValueError("SDF input is larger than 50 MB.")
+            if "$$$$" not in sdf_text:
+                raise ValueError("Reference ligand input does not look like an SDF file.")
+            payload["sdf"] = {"name": safe_name(str(sdf.get("name") or "reference.sdf"), "reference.sdf"), "text": sdf_text}
+        else:
+            payload["sdf"] = None
+        if payload["mode"] == "reference" and not payload["sdf"]:
+            raise ValueError("Reference mode requires an SDF ligand input.")
+        return payload
+
+    def _validated_email(self, value: str | None) -> str | None:
+        email = str(value or "").strip()
+        if not email:
+            return None
+        if not EMAIL_PATTERN.match(email):
+            raise ValueError("Email address is not valid.")
+        return email
+
+    def _validated_choice(self, value: str, allowed: set[str], label: str) -> str:
+        text = str(value).strip()
+        if text not in allowed:
+            raise ValueError(f"Unsupported {label}: {text}")
+        return text
+
+    def _validated_parameters(self, parameters: dict) -> dict:
+        if not isinstance(parameters, dict):
+            raise ValueError("Parameters must be a JSON object.")
+        cleaned = dict(parameters)
+        for key, minimum, maximum in (
+            ("num_samples", 1, 10000),
+            ("batch_size", 1, 10000),
+            ("pocket_radius", 1, 1000),
+        ):
+            if key not in cleaned or cleaned[key] in (None, ""):
+                continue
+            try:
+                value = float(cleaned[key])
+            except (TypeError, ValueError):
+                raise ValueError(f"{key} must be numeric.")
+            if value < minimum or value > maximum:
+                raise ValueError(f"{key} must be between {minimum} and {maximum}.")
+            cleaned[key] = int(value) if value.is_integer() else value
+        return cleaned
+
+    def _looks_like_pdb(self, text: str) -> bool:
+        for line in text.splitlines()[:200]:
+            if line.startswith(("ATOM  ", "HETATM", "MODEL ", "HEADER", "CRYST1")):
+                return True
+        return False
 
     def _append_postprocess_args(self, command: list[str], postprocess: dict | None) -> None:
         if not postprocess or not postprocess.get("vina"):

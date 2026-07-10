@@ -13,6 +13,7 @@ const state = {
   parameters: Object.fromEntries([...PARAMETERS, ...ADVANCED_PARAMETERS].map((item) => [item.key, item.value])),
   customPdb: null,
   customSdf: null,
+  batchInputs: [],
   currentJob: null,
   selectedJob: null,
   jobs: [],
@@ -87,6 +88,7 @@ function bindEvents() {
   $("#theme-toggle").addEventListener("click", () => document.body.classList.toggle("high-contrast"));
   $("#pdb-input").addEventListener("change", handlePdbUpload);
   $("#sdf-input").addEventListener("change", handleSdfUpload);
+  $("#folder-input").addEventListener("change", handleFolderUpload);
   window.addEventListener("resize", debounce(renderCharts, 120));
   updateJobTargetControls();
   updateVinaControls();
@@ -110,6 +112,11 @@ async function setActiveTab(tab) {
 async function loadExample(exampleId) {
   setLoading(true);
   state.exampleId = exampleId;
+  state.customPdb = null;
+  state.customSdf = null;
+  state.batchInputs = [];
+  updateCustomOptionLabel("");
+  updateBatchLabel();
   const example = EXAMPLES[exampleId];
   $("#example-select").value = exampleId;
   setMode(example.mode, false);
@@ -167,7 +174,7 @@ function renderStudy() {
 }
 
 async function submitGenerationJob() {
-  if (!state.study && !state.customPdb) {
+  if (!state.batchInputs.length && !state.study && !state.customPdb) {
     showToast("Load or upload a PDB before submitting a job.");
     return;
   }
@@ -175,15 +182,20 @@ async function submitGenerationJob() {
   button.disabled = true;
   button.querySelector("span").textContent = "Submitting";
   try {
-    const payload = buildJobPayload();
-    const job = await service.submitJob(payload);
+    const payload = state.batchInputs.length ? buildBatchPayload() : buildJobPayload();
+    const response = state.batchInputs.length ? await service.submitBatch(payload) : { jobs: [await service.submitJob(payload)], errors: [] };
+    const job = response.jobs[0];
     state.currentJob = job;
     state.selectedJob = job;
-    updateJobPanel(job, "Job queued.");
-    updateJobDetail(job, "Job queued.");
+    const message = response.jobs.length > 1
+      ? `${response.jobs.length} jobs queued${response.errors.length ? `, ${response.errors.length} skipped` : ""}.`
+      : "Job queued.";
+    updateJobPanel(job, message);
+    updateJobDetail(job, message);
     await refreshJobs(false);
     setActiveTab("jobs");
-    showToast(`${targetLabel(job)} job queued.`);
+    showToast(response.jobs.length > 1 ? message : `${targetLabel(job)} job queued.`);
+    if (response.errors.length) console.warn("Batch submission errors", response.errors);
     pollJob(job.id);
   } catch (error) {
     showToast(error.message);
@@ -194,14 +206,14 @@ async function submitGenerationJob() {
   }
 }
 
-function buildJobPayload() {
+function buildJobPayload(inputOverride = null) {
   const example = EXAMPLES[state.exampleId] || EXAMPLES["4aua"];
-  const pdb = state.customPdb || {
+  const pdb = inputOverride?.pdb || state.customPdb || {
     name: example.pdb.split("/").pop(),
     text: state.study?.pdbText,
   };
   const sdf = state.mode === "reference"
-    ? (state.customSdf || (state.study?.referenceSdf ? {
+    ? (inputOverride?.sdf || state.customSdf || (state.study?.referenceSdf ? {
       name: example.sdf?.split("/").pop() || "reference.sdf",
       text: state.study.referenceSdf,
     } : null))
@@ -210,6 +222,7 @@ function buildJobPayload() {
     target: $("#job-target").value,
     mode: state.mode,
     example_id: state.exampleId,
+    input_name: inputOverride?.name || pdb?.name || state.exampleId,
     email: $("#job-email").value.trim(),
     pdb,
     sdf,
@@ -219,6 +232,12 @@ function buildJobPayload() {
       ...state.parameters,
       device: $("#job-target").value === "osc_gpu" ? "cuda:0" : "cpu",
     },
+  };
+}
+
+function buildBatchPayload() {
+  return {
+    jobs: state.batchInputs.map((input) => buildJobPayload(input)),
   };
 }
 
@@ -330,10 +349,10 @@ async function refreshJobs(showMessage = false) {
 function renderJobsTable() {
   const jobs = [...state.jobs].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   $("#jobs-table").innerHTML = jobs.length ? jobs.map((job) => `
-    <tr data-job-id="${job.id}" class="${state.selectedJob?.id === job.id ? "active" : ""}">
-      <td>${job.id}<br><small>${job.mode || "run"}</small></td>
-      <td><span class="status-badge" data-status="${job.status}">${job.status}</span></td>
-      <td>${targetLabel(job)}<br><small>${job.example_id || "custom"}</small></td>
+    <tr data-job-id="${escapeHtml(job.id)}" class="${state.selectedJob?.id === job.id ? "active" : ""}">
+      <td>${escapeHtml(job.id)}<br><small>${escapeHtml(job.mode || "run")}</small></td>
+      <td><span class="status-badge" data-status="${escapeHtml(job.status)}">${escapeHtml(job.status)}</span></td>
+      <td>${escapeHtml(targetLabel(job))}<br><small>${escapeHtml(inputLabel(job))}</small></td>
       <td>${formatDate(job.created_at)}</td>
       <td><button class="secondary-button compact-action load-job-results" ${job.status === "completed" ? "" : "disabled"}>Results</button></td>
     </tr>`).join("") : `<tr><td colspan="5">No jobs yet.</td></tr>`;
@@ -497,12 +516,17 @@ function targetLabel(job) {
   return job.target || "Local CPU";
 }
 
+function inputLabel(job) {
+  return job?.input_name || filenameOnly(job?.inputs?.pdb || "") || job?.example_id || "custom";
+}
+
 function updateJobTargetControls() {
   const target = $("#job-target").value;
   $("#slurm-controls").hidden = target !== "osc_gpu";
   $("#job-runtime-label").textContent = target === "osc_gpu" ? "OSC GPU" : "Local CPU";
   $("#param-device").value = target === "osc_gpu" ? "auto" : "cpu";
   state.parameters.device = target === "osc_gpu" ? "auto" : "cpu";
+  updateBatchLabel();
   updateCommand();
 }
 
@@ -553,6 +577,10 @@ function compareMetric(a, b) {
 
 function updateCommand() {
   const example = EXAMPLES[state.exampleId] || EXAMPLES["4aua"];
+  const pdbName = state.batchInputs.length
+    ? `${state.batchInputs.length} folders`
+    : (state.customPdb?.name || example.pdb);
+  const sdfName = state.customSdf?.name || example.sdf;
   const args = [
     `python sample.py ${state.parameters.config}`,
     `--device ${state.parameters.device}`,
@@ -561,9 +589,9 @@ function updateCommand() {
     `--pocket_radius ${state.parameters.pocket_radius}`,
     `--exhaustiveness ${state.parameters.exhaustiveness}`,
     `--atom_enc_mode ${state.parameters.atom_enc_mode}`,
-    `--pdb_filename ${example.pdb}`,
+    `--pdb_filename ${pdbName}`,
   ];
-  if (state.mode === "reference" && example.sdf) args.push(`--sdf_filename ${example.sdf}`);
+  if (state.mode === "reference" && sdfName) args.push(`--sdf_filename ${sdfName}`);
   if ($("#vina-enabled").checked) {
     args.push(`--vina_score --vina_mode ${$("#vina-mode").value} --vina_exhaustiveness ${$("#vina-exhaustiveness").value}`);
   }
@@ -582,11 +610,16 @@ function resetParameters() {
 async function handlePdbUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
-  state.customPdb = { name: file.name, text: await file.text() };
+  const text = await readValidatedTextFile(file, "pdb");
+  if (!text) return;
+  state.customPdb = { name: file.name, text };
+  state.batchInputs = [];
+  updateBatchLabel();
   $("#pdb-name").textContent = file.name;
   $("#pdb-detail").textContent = `${formatBytes(file.size)} · local upload`;
   $("#example-select").value = "custom";
   state.exampleId = "custom";
+  updateCustomOptionLabel(file.name);
   if (state.study) {
     state.study.pdbText = state.customPdb.text;
     renderSelectedStructure();
@@ -596,11 +629,94 @@ async function handlePdbUpload(event) {
 async function handleSdfUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
-  state.customSdf = { name: file.name, text: await file.text() };
+  const text = await readValidatedTextFile(file, "sdf");
+  if (!text) return;
+  state.customSdf = { name: file.name, text };
+  state.batchInputs = [];
+  updateBatchLabel();
   $("#sdf-name").textContent = file.name;
   $("#sdf-detail").textContent = `${formatBytes(file.size)} · local upload`;
   $("#example-select").value = "custom";
   state.exampleId = "custom";
+  updateCustomOptionLabel(state.customPdb?.name || file.name);
+}
+
+async function handleFolderUpload(event) {
+  const files = [...event.target.files];
+  if (!files.length) return;
+  try {
+    const grouped = await groupBatchFiles(files);
+    state.batchInputs = grouped;
+    $("#example-select").value = "custom";
+    state.exampleId = "custom";
+    updateCustomOptionLabel(grouped.length === 1 ? grouped[0].name : `${grouped.length} folders`);
+    updateBatchLabel();
+    updateCommand();
+    showToast(`${grouped.length} folder${grouped.length === 1 ? "" : "s"} ready for batch submission.`);
+  } catch (error) {
+    showToast(error.message);
+    state.batchInputs = [];
+    updateBatchLabel();
+  }
+}
+
+async function groupBatchFiles(files) {
+  const byFolder = new Map();
+  files.forEach((file) => {
+    const relative = file.webkitRelativePath || file.name;
+    const parts = relative.split("/");
+    const folder = parts.length > 1 ? parts.slice(0, -1).join("/") : "Selected files";
+    if (!byFolder.has(folder)) byFolder.set(folder, []);
+    byFolder.get(folder).push(file);
+  });
+  const jobs = [];
+  for (const [folder, folderFiles] of byFolder) {
+    const pdbFile = folderFiles.find((file) => file.name.toLowerCase().endsWith(".pdb"));
+    const sdfFile = folderFiles.find((file) => file.name.toLowerCase().endsWith(".sdf"));
+    if (!pdbFile) continue;
+    const pdbText = await readValidatedTextFile(pdbFile, "pdb", false);
+    const sdfText = sdfFile ? await readValidatedTextFile(sdfFile, "sdf", false) : null;
+    if (!pdbText) continue;
+    if (state.mode === "reference" && !sdfText) continue;
+    jobs.push({
+      name: folder,
+      pdb: { name: pdbFile.name, text: pdbText },
+      sdf: sdfText ? { name: sdfFile.name, text: sdfText } : null,
+    });
+  }
+  if (!jobs.length) {
+    throw new Error(state.mode === "reference"
+      ? "No valid batch folders found. Each folder needs a PDB and SDF in reference mode."
+      : "No valid batch folders found. Each folder needs a PDB.");
+  }
+  return jobs;
+}
+
+async function readValidatedTextFile(file, kind, showError = true) {
+  const text = await file.text();
+  const lower = file.name.toLowerCase();
+  const validExtension = kind === "pdb" ? lower.endsWith(".pdb") : lower.endsWith(".sdf");
+  const validContent = kind === "pdb"
+    ? text.split(/\r?\n/, 200).some((line) => /^(ATOM  |HETATM|MODEL |HEADER|CRYST1)/.test(line))
+    : text.includes("$$$$");
+  if (!validExtension || !validContent) {
+    if (showError) showToast(`${file.name} does not look like a valid ${kind.toUpperCase()} file.`);
+    return null;
+  }
+  return text;
+}
+
+function updateBatchLabel() {
+  const count = state.batchInputs.length;
+  $("#folder-name").textContent = count ? `${count} batch folder${count === 1 ? "" : "s"}` : "Batch folders";
+  $("#folder-detail").textContent = count
+    ? `Generate will submit ${count} ${$("#job-target").value === "osc_gpu" ? "Slurm" : "queued CPU"} job${count === 1 ? "" : "s"}`
+    : "Optional: one PDB and optional SDF per folder";
+}
+
+function updateCustomOptionLabel(label) {
+  const option = $("#example-select option[value='custom']");
+  option.textContent = label ? `Custom · ${label}` : "Custom upload";
 }
 
 function downloadSelected() {
@@ -699,6 +815,16 @@ function studyName() {
 
 function filenameOnly(path) {
   return String(path || "").split("/").pop() || "conditar_input";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  }[char]));
 }
 
 function downloadBlob(content, filename, type) {
