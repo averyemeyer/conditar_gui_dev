@@ -64,7 +64,6 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
                     "container_runtime": JOB_MANAGER.container_runtime,
                     "docker_image": JOB_MANAGER.docker_image,
                     "docker_tar": JOB_MANAGER.docker_tar,
-                    "sif": str(JOB_MANAGER.sif_path),
                     "slurm": {
                         "sbatch": JOB_MANAGER.sbatch_bin,
                         "squeue": JOB_MANAGER.squeue_bin,

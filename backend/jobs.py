@@ -60,10 +60,6 @@ class LocalJobManager:
     def __init__(self, project_root: Path):
         self.project_root = project_root
         self.job_root = project_root / "job_data" / "jobs"
-        self.sif_path = Path(os.environ.get(
-            "CONDITAR_SIF",
-            project_root.parent / "conDitar-dev" / "conditar-dev.sif",
-        )).expanduser()
         self.docker_image = os.environ.get("CONDITAR_DOCKER_IMAGE", "localhost/conditar-dev:container-dev")
         self.source_mount = os.environ.get("CONDITAR_SOURCE_MOUNT", "").strip()
         self.container_runtime_kind, self.container_runtime = self._resolve_container_runtime()
@@ -145,7 +141,6 @@ class LocalJobManager:
                 "runtime": os.environ.get("PODMAN_BIN", "podman") if target == "osc_gpu" else self.container_runtime,
                 "docker_image": self.docker_image if target == "osc_gpu" or self.container_runtime_kind in {"docker", "podman"} else None,
                 "source_mount": self.source_mount or None,
-                "sif": str(self.sif_path) if self.container_runtime_kind in {"apptainer", "singularity"} else None,
             },
             "command": command,
             "exit_code": None,
@@ -262,6 +257,10 @@ class LocalJobManager:
                 process.kill()
         job["status"] = "canceled"
         job["finished_at"] = utc_now()
+        job["error_message"] = (
+            f"Job canceled by user. See logs: {self._paths(job_id).stderr} and "
+            f"{self._paths(job_id).stdout}."
+        )
         self._write_job(self._paths(job_id), job)
         self._send_email(job, self._paths(job_id))
         return job
@@ -278,50 +277,19 @@ class LocalJobManager:
         if target == "osc_gpu":
             return self._build_docker_command(paths, pdb_path, sdf_path, parameters, device="cuda:0", gpu=True, postprocess=postprocess)
         if not self.container_runtime:
+            if self.container_runtime_kind:
+                raise ValueError(
+                    f"Unsupported container runtime '{self.container_runtime_kind}'. "
+                    "This GUI supports Docker locally and Podman for OSC Slurm jobs."
+                )
             raise ValueError(
-                "Container runtime not found. Install Docker/Podman for local CPU runs, "
-                "or Apptainer/Singularity for SIF runs. You can set CONDITAR_RUNTIME, "
-                "DOCKER_BIN, PODMAN_BIN, or APPTAINER_BIN."
+                "Docker/Podman runtime not found. Install Docker for local CPU runs "
+                "or Podman on OSC for Slurm GPU runs, then set CONDITAR_RUNTIME, "
+                "DOCKER_BIN, or PODMAN_BIN."
             )
-        if self.container_runtime_kind in {"apptainer", "singularity"}:
-            return self._build_apptainer_command(paths, pdb_path, sdf_path, parameters)
         if self.container_runtime_kind in {"docker", "podman"}:
             return self._build_docker_command(paths, pdb_path, sdf_path, parameters, device="cpu", gpu=False, postprocess=postprocess)
         raise ValueError(f"Unsupported container runtime: {self.container_runtime_kind}")
-
-    def _build_apptainer_command(
-        self,
-        paths: JobPaths,
-        pdb_path: Path,
-        sdf_path: Path | None,
-        parameters: dict,
-    ) -> list[str]:
-        if not self.sif_path.exists():
-            raise ValueError(f"Container image not found: {self.sif_path}")
-        command = [
-            self.container_runtime,
-            "run",
-            str(self.sif_path),
-            "--pdb",
-            str(pdb_path),
-            "--out",
-            str(paths.outputs),
-            "--tmp-dir",
-            str(self.default_tmp),
-            "--device",
-            "cpu",
-        ]
-        if sdf_path:
-            command.extend(["--sdf", str(sdf_path)])
-        for gui_key, cli_key in (
-            ("num_samples", "--num-samples"),
-            ("batch_size", "--batch-size"),
-            ("pocket_radius", "--pocket-radius"),
-        ):
-            value = parameters.get(gui_key)
-            if value not in (None, ""):
-                command.extend([cli_key, str(value)])
-        return command
 
     def _build_docker_command(
         self,
@@ -381,8 +349,6 @@ class LocalJobManager:
 
     def _resolve_container_runtime(self) -> tuple[str | None, str | None]:
         requested = os.environ.get("CONDITAR_RUNTIME", "auto").lower()
-        if requested in {"apptainer", "singularity"}:
-            return requested, self._resolve_executable("APPTAINER_BIN", requested)
         if requested in {"docker", "podman"}:
             return requested, self._resolve_executable(f"{requested.upper()}_BIN", requested)
         if requested != "auto":
@@ -395,11 +361,6 @@ class LocalJobManager:
         if docker:
             return "docker", docker
 
-        apptainer = shutil.which(os.environ.get("APPTAINER_BIN", "")) if os.environ.get("APPTAINER_BIN") else None
-        apptainer = apptainer or shutil.which("apptainer") or shutil.which("singularity")
-        if self.sif_path.exists() and apptainer:
-            kind = "singularity" if Path(apptainer).name == "singularity" else "apptainer"
-            return kind, apptainer
         return None, None
 
     def _resolve_executable(self, env_name: str, fallback: str) -> str | None:
@@ -511,10 +472,34 @@ class LocalJobManager:
 
     def _submit_slurm_job(self, job: dict, paths: JobPaths, pdb_path: Path, sdf_path: Path | None) -> dict:
         if not self.sbatch_bin:
-            raise ValueError("sbatch not found. Start the GUI on OSC with Slurm available or set SBATCH_BIN.")
+            job["status"] = "failed"
+            job["finished_at"] = utc_now()
+            job["exit_code"] = 127
+            job["error_message"] = (
+                "Slurm submission unavailable: sbatch was not found. Start the GUI on OSC "
+                "with Slurm available or set SBATCH_BIN. See job.json and logs under "
+                f"{paths.root}."
+            )
+            (paths.logs / "sbatch.stderr.log").write_text(job["error_message"] + "\n")
+            self._write_job(paths, job)
+            self._send_email(job, paths)
+            return job
         slurm = self._slurm_options(job.get("slurm") or {})
         script_path = paths.root / "run.slurm"
-        script_path.write_text(self._slurm_script(job, paths, pdb_path, sdf_path, slurm))
+        try:
+            script_path.write_text(self._slurm_script(job, paths, pdb_path, sdf_path, slurm))
+        except Exception as error:
+            job["status"] = "failed"
+            job["finished_at"] = utc_now()
+            job["exit_code"] = 1
+            job["error_message"] = (
+                f"Could not prepare the Slurm submission: {error}. See job metadata and logs "
+                f"under {paths.root}."
+            )
+            (paths.logs / "sbatch.stderr.log").write_text(job["error_message"] + "\n")
+            self._write_job(paths, job)
+            self._send_email(job, paths)
+            return job
         job["slurm"] = {
             **slurm,
             "script": str(script_path.relative_to(paths.root)),
@@ -523,25 +508,45 @@ class LocalJobManager:
         }
         self._write_job(paths, job)
 
-        result = subprocess.run(
-            [self.sbatch_bin, str(script_path)],
-            cwd=str(self.project_root),
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        (paths.logs / "sbatch.stdout.log").write_text(result.stdout)
-        (paths.logs / "sbatch.stderr.log").write_text(result.stderr)
-        if result.returncode != 0:
+        try:
+            result = subprocess.run(
+                [self.sbatch_bin, str(script_path)],
+                cwd=str(self.project_root),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        except OSError as error:
+            result = None
+            (paths.logs / "sbatch.stderr.log").write_text(f"{type(error).__name__}: {error}\n")
+        (paths.logs / "sbatch.stdout.log").write_text(result.stdout if result is not None else "")
+        if result is not None:
+            (paths.logs / "sbatch.stderr.log").write_text(result.stderr)
+        if result is None or result.returncode != 0:
             job["status"] = "failed"
             job["finished_at"] = utc_now()
-            job["exit_code"] = result.returncode
-            job["error_message"] = result.stderr.strip() or "sbatch submission failed."
+            job["exit_code"] = result.returncode if result is not None else 1
+            detail = result.stderr.strip() if result is not None else "sbatch could not be executed."
+            job["error_message"] = (
+                f"Slurm submission failed: {detail} See logs: {paths.logs / 'sbatch.stderr.log'} "
+                f"and {paths.logs / 'sbatch.stdout.log'}."
+            )
             self._write_job(paths, job)
             self._send_email(job, paths)
             return job
 
         slurm_job_id = self._parse_sbatch_job_id(result.stdout)
+        if not slurm_job_id:
+            job["status"] = "failed"
+            job["finished_at"] = utc_now()
+            job["exit_code"] = 1
+            job["error_message"] = (
+                "Slurm submission returned no job ID. See logs: "
+                f"{paths.logs / 'sbatch.stdout.log'} and {paths.logs / 'sbatch.stderr.log'}."
+            )
+            self._write_job(paths, job)
+            self._send_email(job, paths)
+            return job
         job["slurm"]["job_id"] = slurm_job_id
         job["status"] = "queued"
         self._write_job(paths, job)
@@ -653,7 +658,10 @@ class LocalJobManager:
             job["finished_at"] = job.get("finished_at") or utc_now()
             job["status"] = "completed" if exit_code == 0 else "failed"
             if exit_code != 0:
-                job["error_message"] = f"Slurm container command exited with status {exit_code}."
+                job["error_message"] = (
+                    f"Slurm container command exited with status {exit_code}. See logs: "
+                    f"{paths.stderr} and {paths.stdout}."
+                )
             self._write_job(paths, job)
             self._send_email(job, paths)
             return job
@@ -672,13 +680,18 @@ class LocalJobManager:
                 job["finished_at"] = job.get("finished_at") or utc_now()
                 job["exit_code"] = 0 if job["status"] == "completed" else 1
                 if job["status"] == "failed":
-                    job["error_message"] = "Slurm completed but no SDF outputs were found."
+                    job["error_message"] = (
+                        "Slurm completed but no SDF outputs were found. See logs: "
+                        f"{paths.stderr} and {paths.stdout}."
+                    )
                 self._send_email(job, paths)
             elif state in SLURM_FAILURE_STATES:
                 job["status"] = "failed"
                 job["finished_at"] = job.get("finished_at") or utc_now()
                 job["exit_code"] = 1
-                job["error_message"] = f"Slurm job ended with state {state}."
+                job["error_message"] = (
+                    f"Slurm job ended with state {state}. See logs: {paths.stderr} and {paths.stdout}."
+                )
                 self._send_email(job, paths)
             self._write_job(paths, job)
         elif job.get("target") == "osc_gpu":
@@ -686,9 +699,15 @@ class LocalJobManager:
                 if job.get("status") == "queued":
                     job["status"] = "running"
                     job["started_at"] = job.get("started_at") or utc_now()
-                job["status_note"] = "Slurm status temporarily unavailable; logs indicate the job has started."
+                job["status_note"] = (
+                    "Slurm status temporarily unavailable; logs indicate the job has started. "
+                    f"See logs: {paths.stderr} and {paths.stdout}."
+                )
             else:
-                job["status_note"] = "Slurm status temporarily unavailable."
+                job["status_note"] = (
+                    "Slurm status temporarily unavailable; the job may still be queued. "
+                    f"See logs: {paths.stderr} and {paths.stdout}."
+                )
             self._write_job(paths, job)
         return job
 
@@ -733,7 +752,10 @@ class LocalJobManager:
                     continue
                 job["status"] = "failed"
                 job["finished_at"] = utc_now()
-                job["error_message"] = "Server restarted before this job completed."
+                job["error_message"] = (
+                    "Server restarted before this job completed. See logs: "
+                    f"{self._paths(job['id']).stderr} and {self._paths(job['id']).stdout}."
+                )
                 self._write_job(self._paths(job["id"]), job)
 
     def _work_loop(self) -> None:
@@ -756,22 +778,35 @@ class LocalJobManager:
         env = os.environ.copy()
         env["CONDITAR_DEVICE"] = "cpu"
         paths.logs.mkdir(parents=True, exist_ok=True)
-        with paths.stdout.open("w") as stdout, paths.stderr.open("w") as stderr:
-            stdout.write("$ " + " ".join(job["command"]) + "\n\n")
-            stdout.flush()
-            process = subprocess.Popen(
-                job["command"],
-                stdout=stdout,
-                stderr=stderr,
-                cwd=str(self.project_root),
-                env=env,
-                start_new_session=True,
+        try:
+            with paths.stdout.open("w") as stdout, paths.stderr.open("w") as stderr:
+                stdout.write("$ " + " ".join(job["command"]) + "\n\n")
+                stdout.flush()
+                process = subprocess.Popen(
+                    job["command"],
+                    stdout=stdout,
+                    stderr=stderr,
+                    cwd=str(self.project_root),
+                    env=env,
+                    start_new_session=True,
+                )
+                with self._lock:
+                    self._processes[job_id] = process
+                exit_code = process.wait()
+                with self._lock:
+                    self._processes.pop(job_id, None)
+        except OSError as error:
+            job = self.get_job(job_id) or job
+            job["status"] = "failed"
+            job["finished_at"] = utc_now()
+            job["exit_code"] = 1
+            job["error_message"] = (
+                f"Could not start the Docker/Podman job: {error}. See logs: "
+                f"{paths.stderr} and {paths.stdout}."
             )
-            with self._lock:
-                self._processes[job_id] = process
-            exit_code = process.wait()
-            with self._lock:
-                self._processes.pop(job_id, None)
+            self._write_job(paths, job)
+            self._send_email(job, paths)
+            return
 
         job = self.get_job(job_id) or job
         if job["status"] == "canceled":
@@ -782,10 +817,16 @@ class LocalJobManager:
         job["outputs"]["sdf_count"] = output_count
         job["status"] = "completed" if exit_code == 0 and output_count > 0 else "failed"
         if exit_code != 0:
-            job["error_message"] = f"Command exited with status {exit_code}."
+            job["error_message"] = (
+                f"Docker/Podman command exited with status {exit_code}. See logs: "
+                f"{paths.stderr} and {paths.stdout}."
+            )
         elif output_count == 0:
             job["exit_code"] = 1
-            job["error_message"] = "Command completed but no SDF outputs were found."
+            job["error_message"] = (
+                "Docker/Podman command completed but no SDF outputs were found. See logs: "
+                f"{paths.stderr} and {paths.stdout}."
+            )
         self._write_job(paths, job)
         self._send_email(job, paths)
 

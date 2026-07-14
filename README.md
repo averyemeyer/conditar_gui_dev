@@ -78,23 +78,15 @@ sibling checkout exists.
 
 Runtime selection:
 
-- `CONDITAR_RUNTIME=auto` prefers Podman, then Docker, then Apptainer/Singularity.
+- `CONDITAR_RUNTIME=auto` prefers Podman, then Docker.
 - `CONDITAR_RUNTIME=docker` forces Docker Desktop or Docker Engine.
 - `CONDITAR_RUNTIME=podman` forces Podman on OSC/Linux.
-- `CONDITAR_RUNTIME=apptainer` keeps the old SIF path available as a fallback.
 
 If an executable is installed somewhere unusual, set the matching variable:
 
 ```bash
 DOCKER_BIN=/path/to/docker CONDITAR_RUNTIME=docker python3 serve.py --open
 PODMAN_BIN=/path/to/podman CONDITAR_RUNTIME=podman python3 serve.py --open
-APPTAINER_BIN=/path/to/apptainer CONDITAR_RUNTIME=apptainer python3 serve.py --open
-```
-
-For the legacy Apptainer path, override the SIF path with `CONDITAR_SIF`:
-
-```bash
-CONDITAR_RUNTIME=apptainer CONDITAR_SIF=/path/to/conditar-dev.sif python3 serve.py --open
 ```
 
 The **Generate molecules** button submits a local CPU background job. Job inputs,
