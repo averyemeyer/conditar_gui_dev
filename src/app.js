@@ -769,7 +769,6 @@ function updateCommand() {
     `--num_samples ${state.parameters.num_samples}`,
     `--batch_size ${state.parameters.batch_size}`,
     `--pocket_radius ${state.parameters.pocket_radius}`,
-    `--exhaustiveness ${state.parameters.exhaustiveness}`,
     `--atom_enc_mode ${state.parameters.atom_enc_mode}`,
     `--pdb_filename ${pdbName}`,
   ];
