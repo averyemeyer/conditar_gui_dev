@@ -42,6 +42,7 @@
         <button class="workflow-step" data-section="jobs">Jobs</button>
         <button class="workflow-step" data-section="results">Results</button>
         <button class="workflow-step" data-section="export">Export</button>
+        <button class="workflow-step" data-section="help">Help</button>
       </nav>
 
       <section id="setup-section" class="workspace-section">
@@ -325,6 +326,23 @@
         </div>
         <label class="export-scope"><input id="export-filtered" type="checkbox" checked> Export the selected subset <span id="export-scope-count"></span></label>
         <div class="export-selection-actions"><button class="secondary-button compact-action" id="select-all-candidates" type="button">Select all</button><button class="secondary-button compact-action" id="clear-candidate-selection" type="button">Clear selection</button><small>Changing the threshold updates the selected set; you can adjust it from the table.</small></div>
+      </section>
+
+      <section id="help-section" class="workspace-section help-section" hidden>
+        <div class="section-heading">
+          <div><p class="eyebrow">Reference</p><h2>How to use conDitar Studio</h2></div>
+          <p>Quick guidance for setting up runs, interpreting jobs, and exporting useful subsets of your results.</p>
+        </div>
+        <div class="help-grid">
+          <article class="panel help-card"><h3>1 · Set up a run</h3><p>Choose where to run, then choose <strong>Protein + reference ligand</strong> or <strong>Pocket only</strong>. Upload a PDB; reference mode also needs an SDF. Use the folder picker for batches.</p></article>
+          <article class="panel help-card"><h3>Batch behavior</h3><p>Each folder is processed as its own job; inputs are never mixed. CPU batches run one at a time. OSC GPU batches can run in parallel when Slurm has capacity.</p></article>
+          <article class="panel help-card"><h3>Job states</h3><p><strong>Queued/PENDING</strong> means the queue has not started the job. <strong>Running</strong> means container execution has begun. Failed and canceled jobs include a reason and log paths.</p></article>
+          <article class="panel help-card"><h3>Vina and QVina</h3><p>The primary Vina score is a standard energy score: lower is better. Vina minimize and dock are separate outputs. QVina is reported separately when selected.</p></article>
+          <article class="panel help-card"><h3>Filter and export</h3><p>Change a distribution threshold to select candidates automatically, then adjust individual checkboxes in the table. Export the selected subset or uncheck the scope option to export all candidates.</p></article>
+          <article class="panel help-card"><h3>Where files go</h3><p>Uploaded inputs, outputs, logs, and metadata are stored under <code>job_data/jobs/&lt;job-id&gt;/</code>. Browser downloads go to Downloads; completed-job ZIPs are also saved in the job output folder.</p></article>
+          <article class="panel help-card"><h3>Troubleshooting</h3><p>For a failure, open the selected job and read the reported log paths. Useful files include <code>job.json</code>, <code>logs/stdout.log</code>, <code>logs/stderr.log</code>, Slurm submission logs, and <code>outputs/</code>.</p></article>
+          <article class="panel help-card"><h3>Pending GPU jobs</h3><p>A valid Slurm job can remain pending while waiting for account, partition, or GPU capacity. This is a scheduler state, not evidence that the molecule input or code failed.</p></article>
+        </div>
       </section>
     </main>
 
