@@ -101,6 +101,7 @@ function bindEvents() {
     state.histogramThreshold = Number(event.target.value);
     $("#histogram-threshold-value").textContent = Number(event.target.value).toFixed(1);
     renderCharts();
+    renderResultsTable();
   });
   $("#histogram").addEventListener("mousemove", handleHistogramHover);
   $("#histogram").addEventListener("mouseleave", () => { $("#histogram-tooltip").textContent = "Hover a bar to see its range and count."; });
@@ -550,6 +551,13 @@ function filteredCandidates() {
         item.properties?.VINA_STATUS,
       ].some((value) => String(value || "").toLowerCase().includes(query));
     })
+    .filter((item) => {
+      if (state.histogramThreshold === null) return true;
+      const metric = $("#histogram-metric").value;
+      const value = Number(item[metric]);
+      if (!Number.isFinite(value)) return false;
+      return metric === "vinaScore" ? value <= state.histogramThreshold : value >= state.histogramThreshold;
+    })
     .sort((a, b) => sort === "index" ? a.index - b.index : compareMetric(candidateMetric(b, sort), candidateMetric(a, sort)));
 }
 
@@ -563,7 +571,6 @@ function renderResultsTable() {
       <td>${formatMetric(propertyMetric(item, "VINA_SCORE_ONLY"))}</td>
       <td>${formatMetric(propertyMetric(item, "VINA_MINIMIZE"))}</td>
       <td>${formatMetric(propertyMetric(item, "VINA_DOCK") ?? propertyMetric(item, "QVINA") ?? item.vinaScore)}</td>
-      <td>${escapeHtml(item.properties?.VINA_STATUS || (item.vinaScore !== null ? "scored" : "-"))}</td>
     </tr>`).join("");
   $$("#result-table tr").forEach((row) => row.addEventListener("click", () => {
     state.selected = state.study.candidates.find((item) => item.index === Number(row.dataset.index));
@@ -646,9 +653,6 @@ function renderSelectedStructure() {
   }
   if (molecule.properties?.QVINA) {
     metrics.push(["QVina", formatMetric(Number.parseFloat(molecule.properties.QVINA))]);
-  }
-  if (molecule.properties?.VINA_STATUS) {
-    metrics.push(["Vina status", molecule.properties.VINA_STATUS]);
   }
   $("#selected-metrics").innerHTML = metrics.map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join("");
   render2D($("#viewer-2d"), molecule);
@@ -970,7 +974,7 @@ async function downloadAll() {
   }
   const zip = new window.JSZip();
   const structures = zip.folder("generated_structures");
-  state.study.candidates.forEach((item) => structures.file(item.name, item.text));
+  filteredCandidates().forEach((item) => structures.file(item.name, item.text));
   zip.file("metrics.csv", csvText());
   zip.file("run_config.json", JSON.stringify(buildConfiguration(), null, 2));
   if (state.study.logs?.stdout) zip.file("logs/stdout.log", state.study.logs.stdout);
@@ -1015,9 +1019,8 @@ function csvText() {
     "vina_minimize",
     "vina_dock",
     "qvina",
-    "vina_status",
   ];
-  const rows = state.study.candidates.map((item) => [
+  const rows = filteredCandidates().map((item) => [
     item.id,
     item.name,
     item.smiles || item.properties?.SMILES || "",
@@ -1031,7 +1034,6 @@ function csvText() {
     item.properties?.VINA_MINIMIZE || "",
     item.properties?.VINA_DOCK || "",
     item.properties?.QVINA || "",
-    item.properties?.VINA_STATUS || "",
   ]);
   return [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
 }

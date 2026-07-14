@@ -277,7 +277,7 @@
             </div>
             <div class="result-table-wrap">
               <table>
-                <thead><tr><th>Candidate</th><th>SMILES</th><th>Score</th><th>Min</th><th>Dock/QVina</th><th>Status</th></tr></thead>
+                <thead><tr><th>Candidate</th><th>SMILES</th><th>Vina score</th><th>Vina minimize</th><th>Vina dock / QVina</th></tr></thead>
                 <tbody id="result-table"></tbody>
               </table>
             </div>
@@ -316,7 +316,7 @@
 
       <section id="export-section" class="workspace-section export-section" hidden>
         <div class="download-bar">
-          <div><h2>Download results</h2><p>Save all structures and metrics, or choose a smaller export.</p></div>
+          <div><h2>Download results</h2><p>Exports use the current search and threshold filters. Vina scores are standard Vina energy scores; lower is better. QVina is shown separately.</p></div>
           <div class="download-actions">
             <button class="primary-button" id="download-all">Download all <b>↓</b></button>
             <button class="secondary-button" id="download-csv">Metrics CSV</button>
