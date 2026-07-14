@@ -91,6 +91,8 @@ select, input[type="text"], input[type="number"], input[type="search"] { border:
 .run-summary { color: #aab9b4; font-size: 10px; }
 .run-label { display: block; margin-bottom: 7px; color: #91a49e; font: 9px "DM Mono"; letter-spacing: .1em; text-transform: uppercase; }
 .run-bar code { display: block; color: #d7e2de; font: 10px "DM Mono"; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.batch-mode-banner { display: flex; gap: 8px; align-items: baseline; margin-top: 10px; padding: 11px 14px; border: 1px solid #d8b36a; border-radius: 8px; color: #674b16; background: #fff8e8; font-size: 12px; }
+.batch-mode-banner strong { text-transform: uppercase; letter-spacing: .06em; font: 500 10px "DM Mono", monospace; }
 .primary-button, .secondary-button { min-height: 44px; padding: 0 18px; border-radius: 7px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .primary-button { border: 1px solid #65a894; background: var(--accent); color: white; }
 .primary-button b { margin-left: 18px; }

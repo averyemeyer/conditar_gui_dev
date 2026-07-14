@@ -222,7 +222,7 @@ async function submitGenerationJob() {
     updateJobPanel(null, error.message);
   } finally {
     button.disabled = false;
-    button.querySelector("span").textContent = "Generate molecules";
+    updateBatchLabel();
   }
 }
 
@@ -835,6 +835,13 @@ function updateBatchLabel() {
   $("#folder-detail").textContent = count
     ? `Generate will submit ${count} ${$("#job-target").value === "osc_gpu" ? "Slurm" : "queued CPU"} job${count === 1 ? "" : "s"}`
     : "Optional: one PDB and optional SDF per folder";
+  $("#batch-mode-banner").hidden = !count;
+  $("#batch-mode-message").textContent = count
+    ? `${count} folder${count === 1 ? "" : "s"} ready. Generate will submit ${count} separate ${$("#job-target").value === "osc_gpu" ? "OSC GPU Slurm" : "local CPU"} jobs; it will not run one combined molecule set.`
+    : "Each selected folder will submit as a separate job.";
+  $("#preview-run span").textContent = count
+    ? `Submit ${count} batch job${count === 1 ? "" : "s"}`
+    : "Generate molecules";
 }
 
 function updateCustomOptionLabel(label) {
