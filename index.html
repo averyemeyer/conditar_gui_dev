@@ -51,14 +51,15 @@
 
         <div class="execution-bar">
           <div>
-            <span class="field-label">Execution target</span>
+            <span class="field-label">Where should this run?</span>
             <select id="job-target">
-              <option value="local_cpu">Local CPU · Docker</option>
+              <option value="auto" selected>Automatic (recommended)</option>
+              <option value="local_cpu">This computer · CPU</option>
               <option value="osc_gpu">OSC GPU · Slurm/Podman</option>
             </select>
           </div>
-          <div class="runtime-readout"><span>Backend check</span><strong id="runtime-status">Checking runtime…</strong><small id="runtime-detail">Detecting available container and scheduler tools.</small></div>
-          <button class="secondary-button compact-action" id="refresh-runtime" type="button">Refresh selection</button>
+          <div class="runtime-readout"><span>Detected environment</span><strong id="runtime-status">Detecting…</strong><small id="runtime-detail">Automatic mode will choose the best available target.</small></div>
+          <button class="secondary-button compact-action" id="refresh-runtime" type="button">Refresh</button>
         </div>
         <div class="batch-mode-banner" id="batch-mode-banner" hidden role="status">
           <strong>Batch mode active</strong>
@@ -94,7 +95,7 @@
               <input id="folder-input" type="file" webkitdirectory directory multiple>
               <div class="file-icon">DIR</div>
               <div><strong id="folder-name">Batch folders</strong><span id="folder-detail">Optional: one PDB and optional SDF per folder</span></div>
-              <button class="text-button" type="button">Choose</button>
+              <button class="text-button" id="clear-batch" type="button">Clear</button>
             </div>
             <p class="field-note" id="mode-note">The reference ligand defines the generation center. Pocket radius controls the surrounding protein context.</p>
           </article>

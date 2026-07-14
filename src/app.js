@@ -21,6 +21,7 @@ const state = {
   jobPollTimer: null,
   activeTab: "setup",
   resultSource: "upload",
+  runtimeHealth: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -103,6 +104,7 @@ function bindEvents() {
   $("#pdb-input").addEventListener("change", handlePdbUpload);
   $("#sdf-input").addEventListener("change", handleSdfUpload);
   $("#folder-input").addEventListener("change", handleFolderUpload);
+  $("#clear-batch").addEventListener("click", clearBatchSelection);
   window.addEventListener("resize", debounce(renderCharts, 120));
   updateJobTargetControls();
   updateVinaControls();
@@ -116,18 +118,24 @@ async function refreshRuntime(showMessage = false) {
   detail.textContent = "Detecting available container and scheduler tools.";
   try {
     const health = await service.health();
-    const container = health.container_backend || "unavailable";
-    const runtime = health.container_runtime || "not found";
+    state.runtimeHealth = health;
+    if ($("#job-target").value === "auto") updateJobTargetControls();
     const slurm = health.slurm?.sbatch ? "sbatch available" : "sbatch not found";
     const gpu = health.gpu_available ? "GPU device visible" : "no local GPU visible";
-    status.textContent = `${container} · ${runtime}`;
-    detail.textContent = `${gpu}; ${slurm}. Select Local CPU or OSC GPU above; refresh after changing hosts or modules.`;
+    const gpuTarget = health.gpu_available && health.slurm?.sbatch;
+    status.textContent = gpuTarget ? "OSC GPU available" : "Local CPU available";
+    detail.textContent = `${gpu}; ${slurm}. Automatic mode will use ${gpuTarget ? "OSC GPU" : "Local CPU"}.`;
     if (showMessage) showToast("Runtime selection refreshed.");
   } catch (error) {
     status.textContent = "Backend unavailable";
     detail.textContent = error.message;
     if (showMessage) showToast(`Runtime check failed: ${error.message}`);
   }
+}
+
+function resolvedTarget() {
+  if ($("#job-target").value !== "auto") return $("#job-target").value;
+  return state.runtimeHealth?.gpu_available && state.runtimeHealth?.slurm?.sbatch ? "osc_gpu" : "local_cpu";
 }
 
 async function setActiveTab(tab) {
@@ -262,7 +270,7 @@ function buildJobPayload(inputOverride = null) {
     } : null))
     : null;
   return {
-    target: $("#job-target").value,
+    target: resolvedTarget(),
     mode: state.mode,
     example_id: state.exampleId,
     input_name: inputOverride?.name || pdb?.name || state.exampleId,
@@ -273,7 +281,7 @@ function buildJobPayload(inputOverride = null) {
     postprocess: buildPostprocessPayload(),
     parameters: {
       ...state.parameters,
-      device: $("#job-target").value === "osc_gpu" ? "cuda:0" : "cpu",
+      device: resolvedTarget() === "osc_gpu" ? "cuda:0" : "cpu",
     },
   };
 }
@@ -644,9 +652,11 @@ function inputLabel(job) {
 }
 
 function updateJobTargetControls() {
-  const target = $("#job-target").value;
+  const target = resolvedTarget();
   $("#slurm-controls").hidden = target !== "osc_gpu";
-  $("#job-runtime-label").textContent = target === "osc_gpu" ? "OSC GPU" : "Local CPU";
+  $("#job-runtime-label").textContent = $("#job-target").value === "auto"
+    ? `Automatic → ${target === "osc_gpu" ? "OSC GPU" : "Local CPU"}`
+    : target === "osc_gpu" ? "OSC GPU" : "Local CPU";
   $("#param-device").value = target === "osc_gpu" ? "auto" : "cpu";
   state.parameters.device = target === "osc_gpu" ? "auto" : "cpu";
   updateBatchLabel();
@@ -782,6 +792,14 @@ async function handleFolderUpload(event) {
   }
 }
 
+function clearBatchSelection() {
+  state.batchInputs = [];
+  $("#folder-input").value = "";
+  updateBatchLabel();
+  updateCommand();
+  showToast("Batch selection cleared. You can choose another folder or upload one input.");
+}
+
 async function groupBatchFiles(files) {
   const byFolder = new Map();
   files.forEach((file) => {
@@ -856,11 +874,11 @@ function updateBatchLabel() {
   const count = state.batchInputs.length;
   $("#folder-name").textContent = count ? `${count} batch folder${count === 1 ? "" : "s"}` : "Batch folders";
   $("#folder-detail").textContent = count
-    ? `Generate will submit ${count} ${$("#job-target").value === "osc_gpu" ? "independent Slurm" : "serial queued CPU"} job${count === 1 ? "" : "s"}`
+    ? `Generate will submit ${count} ${resolvedTarget() === "osc_gpu" ? "independent Slurm" : "serial queued CPU"} job${count === 1 ? "" : "s"}`
     : "Optional: one PDB and optional SDF per folder";
   $("#batch-mode-banner").hidden = !count;
   $("#batch-mode-message").textContent = count
-    ? `${count} folder${count === 1 ? "" : "s"} ready. ${$("#job-target").value === "osc_gpu" ? "Each folder becomes an independent OSC GPU Slurm job, so Slurm can run them in parallel." : "Each folder becomes one local CPU job in a serial queue."} This will not run one combined molecule set.`
+    ? `${count} folder${count === 1 ? "" : "s"} ready. ${resolvedTarget() === "osc_gpu" ? "Each folder becomes an independent OSC GPU Slurm job, so Slurm can run them in parallel." : "Each folder becomes one local CPU job in a serial queue."} This will not run one combined molecule set.`
     : "Each selected folder will submit as a separate job.";
   $("#preview-run span").textContent = count
     ? `Submit ${count} batch job${count === 1 ? "" : "s"}`
