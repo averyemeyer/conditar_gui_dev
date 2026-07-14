@@ -114,6 +114,7 @@ function bindEvents() {
   $("#download-csv").addEventListener("click", downloadCsv);
   $("#download-config").addEventListener("click", downloadConfig);
   $("#download-all").addEventListener("click", downloadAll);
+  $("#export-filtered").addEventListener("change", updateExportScope);
   $("#theme-toggle").addEventListener("click", () => document.body.classList.toggle("high-contrast"));
   $("#pdb-input").addEventListener("change", handlePdbUpload);
   $("#sdf-input").addEventListener("change", handleSdfUpload);
@@ -564,6 +565,7 @@ function filteredCandidates() {
 function renderResultsTable() {
   const candidates = filteredCandidates();
   $("#visible-count").textContent = `${candidates.length} shown`;
+  updateExportScope();
   $("#result-table").innerHTML = candidates.map((item) => `
     <tr data-index="${item.index}" class="${state.selected?.index === item.index ? "active" : ""}">
       <td>${escapeHtml(item.id)}<br><small>${escapeHtml(item.formula)}</small></td>
@@ -947,7 +949,7 @@ function downloadSelected() {
 
 function downloadCsv() {
   if (!state.study) return;
-  downloadBlob(csvText(), `${studyName()}_metrics.csv`, "text/csv");
+  downloadBlob(csvText(exportCandidates()), `${studyName()}_metrics.csv`, "text/csv");
 }
 
 function downloadConfig() {
@@ -974,8 +976,8 @@ async function downloadAll() {
   }
   const zip = new window.JSZip();
   const structures = zip.folder("generated_structures");
-  filteredCandidates().forEach((item) => structures.file(item.name, item.text));
-  zip.file("metrics.csv", csvText());
+  exportCandidates().forEach((item) => structures.file(item.name, item.text));
+  zip.file("metrics.csv", csvText(exportCandidates()));
   zip.file("run_config.json", JSON.stringify(buildConfiguration(), null, 2));
   if (state.study.logs?.stdout) zip.file("logs/stdout.log", state.study.logs.stdout);
   if (state.study.logs?.stderr) zip.file("logs/stderr.log", state.study.logs.stderr);
@@ -1004,7 +1006,7 @@ function buildConfiguration() {
   };
 }
 
-function csvText() {
+function csvText(candidates = filteredCandidates()) {
   const header = [
     "candidate",
     "source_file",
@@ -1020,7 +1022,7 @@ function csvText() {
     "vina_dock",
     "qvina",
   ];
-  const rows = filteredCandidates().map((item) => [
+  const rows = candidates.map((item) => [
     item.id,
     item.name,
     item.smiles || item.properties?.SMILES || "",
@@ -1036,6 +1038,18 @@ function csvText() {
     item.properties?.QVINA || "",
   ]);
   return [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+}
+
+function exportCandidates() {
+  return $("#export-filtered")?.checked ? filteredCandidates() : (state.study?.candidates || []);
+}
+
+function updateExportScope() {
+  const total = state.study?.candidates?.length || 0;
+  const count = exportCandidates().length;
+  const filtered = $("#export-filtered")?.checked;
+  if ($("#export-scope-count")) $("#export-scope-count").textContent = `(${count} of ${total} candidates)`;
+  if ($("#download-all")) $("#download-all").firstChild.textContent = filtered ? "Download filtered " : "Download all ";
 }
 
 function csvCell(value) {
