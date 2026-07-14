@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="conDitar molecular generation research interface">
-  <title>conDitar Studio</title>
+  <meta name="description" content="conDitar molecular generation interface">
+  <title>conDitar</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -13,12 +13,10 @@
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <a class="brand" href="#" aria-label="conDitar Studio home">
-        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span><strong>conDitar</strong><small>STUDIO</small></span>
+      <a class="brand" href="#" aria-label="conDitar home">
+        <img class="brand-logo" src="./media/brand/conditar-logo-current.png" alt="conDitar">
       </a>
       <div class="topbar-meta">
-        <span class="status-pill"><i></i> Preview data</span>
         <button class="icon-button" id="theme-toggle" aria-label="Toggle contrast">◐</button>
       </div>
     </header>
@@ -50,16 +48,6 @@
           <div><p class="eyebrow">Step 1</p><h2>Set up a run</h2></div>
         </div>
 
-        <div class="execution-bar">
-          <div>
-            <span class="field-label">Where should this run?</span>
-            <select id="job-target">
-              <option value="local_cpu">This computer · CPU</option>
-              <option value="osc_gpu">OSC GPU · Slurm/Podman</option>
-            </select>
-          </div>
-          <div class="runtime-readout"><span>Detected environment</span><strong id="runtime-status">Detecting…</strong><small id="runtime-detail">Choosing a default target for this host.</small></div>
-        </div>
         <div class="batch-mode-banner" id="batch-mode-banner" hidden role="status">
           <strong id="batch-mode-title">Batch ready</strong>
           <span id="batch-mode-message">Each selected folder will submit as a separate job.</span>
@@ -102,13 +90,89 @@
           <article class="panel parameter-panel">
             <div class="panel-heading"><div><h3>Run settings</h3></div><button class="text-button" id="reset-params">Reset</button></div>
             <div id="parameter-fields" class="parameter-fields"></div>
+            <div class="execution-bar">
+              <div>
+                <span class="field-label">Where should this run?</span>
+                <select id="job-target">
+                  <option value="local_cpu">This computer · CPU</option>
+                  <option value="osc_gpu">OSC GPU · Slurm/Podman</option>
+                </select>
+              </div>
+              <div class="runtime-readout"><span>Detected environment</span><strong id="runtime-status">Detecting…</strong><small id="runtime-detail">Choosing a default target for this host.</small></div>
+            </div>
             <details class="advanced-options">
-              <summary>Advanced settings <span>runtime-managed paths</span></summary>
+              <summary>Advanced run settings <span>Batch, scoring, notifications</span></summary>
               <div id="advanced-fields" class="parameter-fields advanced-grid"></div>
+              <div class="advanced-controls">
+                <div class="job-controls">
+                  <label class="field-label" for="job-email">Email when finished</label>
+                  <input id="job-email" type="email" placeholder="name@example.edu">
+                  <small id="email-note">Email notifications are currently available for OSC Slurm runs.</small>
+                </div>
+                <div class="postprocess-controls">
+                  <label class="check-control">
+                    <input id="vina-enabled" type="checkbox">
+                    <span>Run Vina scoring after generation</span>
+                  </label>
+                  <div class="vina-options" id="vina-options" hidden>
+                    <div>
+                      <label class="field-label" for="vina-mode">Scoring mode</label>
+                      <select id="vina-mode">
+                        <option value="vina_score">Vina score + minimize</option>
+                        <option value="vina_dock">Vina dock</option>
+                        <option value="qvina">QVina</option>
+                        <option value="all">All available</option>
+                        <option value="none">Chemistry only</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="field-label" for="vina-exhaustiveness">Exhaustiveness</label>
+                      <input id="vina-exhaustiveness" type="number" value="8" min="1">
+                    </div>
+                    <div>
+                      <label class="field-label" for="vina-cpu">CPU threads</label>
+                      <input id="vina-cpu" type="number" value="4" min="1">
+                    </div>
+                  </div>
+                </div>
+                <div class="slurm-controls" id="slurm-controls" hidden>
+                  <div>
+                    <label class="field-label" for="slurm-time">Time limit</label>
+                    <input id="slurm-time" type="text" value="04:00:00">
+                  </div>
+                  <div>
+                    <label class="field-label" for="slurm-mem">Memory</label>
+                    <input id="slurm-mem" type="text" value="32G">
+                  </div>
+                  <div>
+                    <label class="field-label" for="slurm-cpus">CPUs</label>
+                    <input id="slurm-cpus" type="number" value="4" min="1">
+                  </div>
+                  <div>
+                    <label class="field-label" for="slurm-gpus">GPUs</label>
+                    <input id="slurm-gpus" type="number" value="1" min="1">
+                  </div>
+                  <div>
+                    <label class="field-label" for="slurm-partition">Partition</label>
+                    <input id="slurm-partition" type="text" placeholder="optional">
+                  </div>
+                  <div>
+                    <label class="field-label" for="slurm-account">Account</label>
+                    <input id="slurm-account" type="text" placeholder="optional">
+                  </div>
+                </div>
+              </div>
             </details>
           </article>
         </div>
-
+        <div class="job-panel" id="job-panel">
+          <div class="job-status-grid">
+            <div><span>Status</span><strong id="job-status">Idle</strong></div>
+            <div><span>Job ID</span><strong id="job-id">None</strong></div>
+            <div><span>Runtime target</span><strong id="job-runtime-label">Local CPU</strong></div>
+          </div>
+          <pre id="job-log" class="job-log">No job submitted.</pre>
+        </div>
         <div class="run-bar">
           <div>
             <strong>Ready to generate</strong>
@@ -116,70 +180,6 @@
             <code id="command-preview" hidden></code>
           </div>
           <button class="primary-button" id="preview-run"><span>Generate molecules</span><b>→</b></button>
-        </div>
-        <div class="job-panel" id="job-panel">
-          <div class="job-controls">
-            <label class="field-label" for="job-email">Email when finished</label>
-            <input id="job-email" type="email" placeholder="name@example.edu">
-          </div>
-          <div class="slurm-controls" id="slurm-controls" hidden>
-            <div>
-              <label class="field-label" for="slurm-time">Time limit</label>
-              <input id="slurm-time" type="text" value="04:00:00">
-            </div>
-            <div>
-              <label class="field-label" for="slurm-mem">Memory</label>
-              <input id="slurm-mem" type="text" value="32G">
-            </div>
-            <div>
-              <label class="field-label" for="slurm-cpus">CPUs</label>
-              <input id="slurm-cpus" type="number" value="4" min="1">
-            </div>
-            <div>
-              <label class="field-label" for="slurm-gpus">GPUs</label>
-              <input id="slurm-gpus" type="number" value="1" min="1">
-            </div>
-            <div>
-              <label class="field-label" for="slurm-partition">Partition</label>
-              <input id="slurm-partition" type="text" placeholder="optional">
-            </div>
-            <div>
-              <label class="field-label" for="slurm-account">Account</label>
-              <input id="slurm-account" type="text" placeholder="optional">
-            </div>
-          </div>
-          <div class="postprocess-controls">
-            <label class="check-control">
-              <input id="vina-enabled" type="checkbox">
-              <span>Run Vina scoring after generation</span>
-            </label>
-            <div class="vina-options" id="vina-options" hidden>
-              <div>
-                <label class="field-label" for="vina-mode">Scoring mode</label>
-                <select id="vina-mode">
-                  <option value="vina_score">Vina score + minimize</option>
-                  <option value="vina_dock">Vina dock</option>
-                  <option value="qvina">QVina</option>
-                  <option value="all">All available</option>
-                  <option value="none">Chemistry only</option>
-                </select>
-              </div>
-              <div>
-                <label class="field-label" for="vina-exhaustiveness">Exhaustiveness</label>
-                <input id="vina-exhaustiveness" type="number" value="8" min="1">
-              </div>
-              <div>
-                <label class="field-label" for="vina-cpu">CPU threads</label>
-                <input id="vina-cpu" type="number" value="4" min="1">
-              </div>
-            </div>
-          </div>
-          <div class="job-status-grid">
-            <div><span>Status</span><strong id="job-status">Idle</strong></div>
-            <div><span>Job ID</span><strong id="job-id">None</strong></div>
-            <div><span>Runtime target</span><strong id="job-runtime-label">Local CPU</strong></div>
-          </div>
-          <pre id="job-log" class="job-log">No job submitted.</pre>
         </div>
       </section>
 
@@ -330,7 +330,7 @@
 
       <section id="help-section" class="workspace-section help-section" hidden>
         <div class="section-heading">
-          <div><p class="eyebrow">Reference</p><h2>How to use conDitar Studio</h2></div>
+          <div><p class="eyebrow">Reference</p><h2>How to use conDitar</h2></div>
           <p>Quick guidance for setting up runs, interpreting jobs, and exporting useful subsets of your results.</p>
         </div>
         <div class="help-grid">
@@ -345,8 +345,6 @@
         </div>
       </section>
     </main>
-
-    <footer><span>conDitar Studio · research interface preview</span><span>Backend connection pending</span></footer>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

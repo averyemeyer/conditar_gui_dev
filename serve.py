@@ -32,7 +32,7 @@ def validate_project() -> None:
         raise SystemExit(f"Required demo files are missing:\n{formatted}")
 
 
-class StudioRequestHandler(SimpleHTTPRequestHandler):
+class ConDitarRequestHandler(SimpleHTTPRequestHandler):
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-store, max-age=0")
         self.send_header("Pragma", "no-cache")
@@ -108,19 +108,19 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Serve conDitar Studio")
+    parser = argparse.ArgumentParser(description="Serve conDitar")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=4173)
     parser.add_argument("--open", action="store_true", help="Open the GUI in the default browser")
     args = parser.parse_args()
     validate_project()
     handler = partial(
-        StudioRequestHandler,
+        ConDitarRequestHandler,
         directory=str(PROJECT_ROOT),
     )
     server = ThreadingHTTPServer((args.host, args.port), handler)
     url = f"http://{args.host}:{args.port}"
-    print(f"conDitar Studio: {url}")
+    print(f"conDitar: {url}")
     print("Press Ctrl+C to stop the server.")
     if args.open:
         threading.Timer(0.4, webbrowser.open, args=(url,)).start()

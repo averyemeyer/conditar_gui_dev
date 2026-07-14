@@ -1,9 +1,7 @@
 export const PARAMETERS = [
-  { key: "device", label: "Compute device", type: "select", value: "cpu", options: ["cpu", "auto"], help: "Local jobs run on CPU in this backend slice" },
   { key: "num_samples", label: "Molecules", type: "number", value: 100, min: 1, max: 1000, step: 1, help: "Number of candidates to generate" },
   { key: "batch_size", label: "Batch size", type: "number", value: 100, min: 1, max: 500, step: 1, help: "Samples processed per batch" },
   { key: "pocket_radius", label: "Pocket radius", type: "number", value: 10, min: 4, max: 20, step: 1, suffix: "Å", help: "Protein context around the ligand" },
-  { key: "atom_enc_mode", label: "Atom encoding", type: "select", value: "add_aromatic", options: ["add_aromatic", "basic"], help: "Generated atom representation" },
 ];
 
 export const ADVANCED_PARAMETERS = [];

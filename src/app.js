@@ -308,7 +308,7 @@ function buildJobPayload(inputOverride = null) {
     mode: state.mode,
     example_id: state.exampleId,
     input_name: inputOverride?.name || pdb?.name || state.exampleId,
-    email: $("#job-email").value.trim(),
+    email: $("#job-email").disabled ? "" : $("#job-email").value.trim(),
     pdb,
     sdf,
     slurm: buildSlurmPayload(),
@@ -729,7 +729,16 @@ function updateJobTargetControls() {
   const target = resolvedTarget();
   $("#slurm-controls").hidden = target !== "osc_gpu";
   $("#job-runtime-label").textContent = target === "osc_gpu" ? "OSC GPU" : "Local CPU";
-  $("#param-device").value = target === "osc_gpu" ? "auto" : "cpu";
+  const emailInput = $("#job-email");
+  const emailNote = $("#email-note");
+  emailInput.disabled = target !== "osc_gpu";
+  emailInput.closest(".job-controls").classList.toggle("is-disabled", target !== "osc_gpu");
+  if (target !== "osc_gpu") {
+    emailInput.value = "";
+    emailNote.textContent = "Email notifications are disabled for local CPU runs until SMTP/sendmail is configured.";
+  } else {
+    emailNote.textContent = "OSC Slurm can send completion/failure notifications when an email is provided.";
+  }
   state.parameters.device = target === "osc_gpu" ? "auto" : "cpu";
   updateBatchLabel();
   updateCommand();
@@ -787,11 +796,10 @@ function updateCommand() {
   const sdfName = state.customSdf?.name || EXAMPLES[state.exampleId]?.sdf;
   const args = [
     "conditar-sample",
-    `--device ${state.parameters.device}`,
+    `--device ${resolvedTarget() === "osc_gpu" ? "cuda:0" : "cpu"}`,
     `--num_samples ${state.parameters.num_samples}`,
     `--batch_size ${state.parameters.batch_size}`,
     `--pocket_radius ${state.parameters.pocket_radius}`,
-    `--atom_enc_mode ${state.parameters.atom_enc_mode}`,
     `--pdb_filename ${pdbName}`,
   ];
   if (state.mode === "reference" && sdfName) args.push(`--sdf_filename ${sdfName}`);
