@@ -83,6 +83,11 @@ metadata are written to the matching `outputs/` and `logs/` directories. The
 browser does not pass arbitrary client filesystem paths into the container.
 Results are loaded from the selected completed job and can be downloaded as a ZIP.
 
+Batch folders have different execution semantics by target: local CPU batches
+become one job per folder in a single serial worker queue; OSC GPU batches submit
+one independent `sbatch` job per folder, allowing Slurm to run them in parallel
+subject to account, partition, and GPU availability.
+
 Runtime selection:
 
 - `CONDITAR_RUNTIME=auto` prefers Podman, then Docker.

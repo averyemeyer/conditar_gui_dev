@@ -52,6 +52,10 @@ least one CPU case and one OSC GPU case.
 | OSC GPU | Protein + ligand | `4aua/4aua_protein.pdb` + `4aua/4aua_ligand.sdf` | Slurm job moves queued -> running -> completed |
 | OSC GPU | Batch folders | Folder upload with one PDB/SDF pair per folder | Multiple jobs created and visible |
 
+Local CPU batch folders are intentionally processed serially by the backend
+worker. OSC GPU batch folders are submitted as independent Slurm jobs and may
+run in parallel when the account and partition have capacity.
+
 ## What to Verify in the GUI
 
 Setup:
