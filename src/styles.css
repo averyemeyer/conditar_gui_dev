@@ -141,6 +141,10 @@ select, input[type="text"], input[type="number"], input[type="search"] { border:
 .metric-card strong { font: 500 19px "DM Mono"; }
 .metric-card small { margin-left: 5px; color: var(--muted); }
 .analytics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding-top: 10px; }
+.threshold-control { display: inline-flex; gap: 6px; margin-top: 10px; color: var(--muted); font-size: 10px; }
+.threshold-control output { color: var(--ink); font: 500 10px "DM Mono"; }
+#histogram-threshold { display: block; width: 100%; margin: 5px 0; accent-color: var(--accent); }
+.chart-note { margin: 5px 0 0; color: var(--muted); font-size: 10px; }
 .analytics-details { margin: 0 0 16px; }
 .analytics-details > summary { min-height: 62px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); cursor: pointer; list-style: none; }
 .analytics-details > summary span { display: flex; flex-direction: column; gap: 3px; }

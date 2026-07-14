@@ -6,9 +6,10 @@ const COLORS = {
   accentSoft: "rgba(47, 125, 104, .16)",
 };
 
-export function drawHistogram(canvas, values, label) {
+export function drawHistogram(canvas, values, label, threshold = null) {
   const { ctx, width, height } = prepare(canvas);
   ctx.clearRect(0, 0, width, height);
+  canvas._histogram = null;
   if (!values.length) return;
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -31,6 +32,14 @@ export function drawHistogram(canvas, values, label) {
     ctx.fillStyle = index === counts.indexOf(maxCount) ? COLORS.accent : COLORS.accentSoft;
     ctx.fillRect(pad.left + index * (plotW / bins) + gap / 2, pad.top + plotH - barH, barW, barH);
   });
+  if (threshold !== null && threshold >= min && threshold <= max) {
+    const x = pad.left + ((threshold - min) / (max - min || 1)) * plotW;
+    ctx.strokeStyle = "#b56b36";
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + plotH); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  canvas._histogram = { min, max, counts, pad, plotW, bins };
 }
 
 function prepare(canvas) {

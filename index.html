@@ -244,7 +244,10 @@
                   <option value="vinaScore">Docking score</option>
                 </select>
               </div>
+              <label class="threshold-control" for="histogram-threshold">Threshold <output id="histogram-threshold-value">—</output></label>
+              <input id="histogram-threshold" type="range" min="0" max="100" step="0.1" disabled>
               <canvas id="histogram" height="140" aria-label="Property distribution chart"></canvas>
+              <p class="chart-note" id="histogram-tooltip">Hover a bar to see its range and count.</p>
             </article>
             <article class="panel chart-panel">
               <div class="panel-heading"><div><h3>Quality summary</h3></div><span class="chart-key">Current results</span></div>

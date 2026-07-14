@@ -23,6 +23,7 @@ const state = {
   resultSource: "upload",
   runtimeHealth: null,
   targetTouched: false,
+  histogramThreshold: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -96,6 +97,13 @@ function bindEvents() {
   $("#result-search").addEventListener("input", renderResultsTable);
   $("#result-sort").addEventListener("change", renderResultsTable);
   $("#histogram-metric").addEventListener("change", renderCharts);
+  $("#histogram-threshold").addEventListener("input", (event) => {
+    state.histogramThreshold = Number(event.target.value);
+    $("#histogram-threshold-value").textContent = Number(event.target.value).toFixed(1);
+    renderCharts();
+  });
+  $("#histogram").addEventListener("mousemove", handleHistogramHover);
+  $("#histogram").addEventListener("mouseleave", () => { $("#histogram-tooltip").textContent = "Hover a bar to see its range and count."; });
   $(".analytics-details").addEventListener("toggle", (event) => {
     if (event.target.open) requestAnimationFrame(renderCharts);
   });
@@ -582,7 +590,33 @@ function renderCharts() {
   if (!state.study || state.activeTab !== "results" || !$(".analytics-details").open) return;
   const metric = $("#histogram-metric").value;
   const label = $("#histogram-metric").selectedOptions[0].textContent;
-  drawHistogram($("#histogram"), numericValues(state.study.candidates, metric), label);
+  const values = numericValues(state.study.candidates, metric);
+  const slider = $("#histogram-threshold");
+  if (!values.length) {
+    slider.disabled = true;
+    $("#histogram-threshold-value").textContent = "—";
+    drawHistogram($("#histogram"), values, label);
+    return;
+  }
+  const min = Math.min(...values); const max = Math.max(...values);
+  slider.disabled = false; slider.min = min; slider.max = max; slider.step = (max - min || 1) / 100;
+  if (state.histogramThreshold === null || state.histogramThreshold < min || state.histogramThreshold > max) state.histogramThreshold = min;
+  slider.value = state.histogramThreshold;
+  $("#histogram-threshold-value").textContent = Number(state.histogramThreshold).toFixed(1);
+  const passing = values.filter((value) => value >= state.histogramThreshold).length;
+  $("#histogram-tooltip").textContent = `${passing}/${values.length} molecules are at or above the threshold.`;
+  drawHistogram($("#histogram"), values, label, state.histogramThreshold);
+}
+
+function handleHistogramHover(event) {
+  const chart = $("#histogram")._histogram;
+  if (!chart) return;
+  const rect = event.currentTarget.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const index = Math.max(0, Math.min(chart.bins - 1, Math.floor((x - chart.pad.left) / (chart.plotW / chart.bins))));
+  const step = (chart.max - chart.min || 1) / chart.bins;
+  const start = chart.min + index * step;
+  $("#histogram-tooltip").textContent = `${start.toFixed(1)}–${(start + step).toFixed(1)}: ${chart.counts[index]} molecule${chart.counts[index] === 1 ? "" : "s"}`;
 }
 
 function renderSelectedStructure() {
