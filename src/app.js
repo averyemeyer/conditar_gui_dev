@@ -890,7 +890,7 @@ function updateBatchLabel() {
   $("#batch-mode-banner").hidden = !count;
   $("#batch-mode-title").textContent = resolvedTarget() === "osc_gpu" ? "Parallel GPU batch" : "Queued CPU batch";
   $("#batch-mode-message").textContent = count
-    ? `${count} folder${count === 1 ? "" : "s"} ready. ${resolvedTarget() === "osc_gpu" ? "Parallel GPU batch ready: Slurm will process the folders concurrently when capacity is available." : "Queued CPU batch ready: folders will run one at a time."} This will not run one combined molecule set.`
+    ? `${count} folder${count === 1 ? "" : "s"} ready. ${resolvedTarget() === "osc_gpu" ? "Parallel GPU batch ready: Slurm will process the folders concurrently when capacity is available." : "Queued CPU batch ready: folders will run one at a time."} Each folder is processed as its own job; inputs are never mixed.`
     : "Each selected folder will submit as a separate job.";
   $("#preview-run span").textContent = count
     ? `Submit ${count} batch job${count === 1 ? "" : "s"}`
