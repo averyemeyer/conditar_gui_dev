@@ -192,16 +192,20 @@ async function submitGenerationJob() {
     const job = response.jobs[0];
     state.currentJob = job;
     state.selectedJob = job;
-    const message = response.jobs.length > 1
-      ? `${response.jobs.length} jobs queued${response.errors.length ? `, ${response.errors.length} skipped` : ""}.`
-      : "Job queued.";
+    const failedJobs = response.jobs.filter((item) => item.status === "failed");
+    const queuedJobs = response.jobs.length - failedJobs.length;
+    const message = failedJobs.length
+      ? `${queuedJobs} queued, ${failedJobs.length} failed. ${failedJobs[0].error_message || "See the selected job logs."}`
+      : response.jobs.length > 1
+        ? `${response.jobs.length} jobs queued${response.errors.length ? `, ${response.errors.length} skipped` : ""}.`
+        : "Job queued.";
     updateJobPanel(job, message);
     updateJobDetail(job, message);
     await refreshJobs(false);
     setActiveTab("jobs");
-    showToast(response.jobs.length > 1 ? message : `${targetLabel(job)} job queued.`);
+    showToast(failedJobs.length ? message : response.jobs.length > 1 ? message : `${targetLabel(job)} job queued.`);
     if (response.errors.length) console.warn("Batch submission errors", response.errors);
-    pollJob(job.id);
+    if (job.status !== "failed") pollJob(job.id);
   } catch (error) {
     showToast(error.message);
     updateJobPanel(null, error.message);
