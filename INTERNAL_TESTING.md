@@ -8,8 +8,19 @@ On a local CPU machine with Docker Desktop:
 
 ```bash
 cd /path/to/conditar_gui_dev
+docker load -i /path/to/localhost_conditar-dev_container-dev-20260710-105038.tar.gz
 CONDITAR_RUNTIME=docker python serve.py --open
 ```
+
+Before submitting a job, verify that the loaded image exposes every supported
+post-processing mode:
+
+```bash
+docker run --rm localhost/conditar-dev:container-dev --help
+```
+
+The `--vina-mode` help text should list `none`, `vina_score`, `vina_dock`,
+`qvina`, and `all`.
 
 On an OSC desktop or VM with Podman and Slurm:
 
@@ -102,3 +113,7 @@ queue wait time.
 Small GPU jobs are dominated by startup overhead. Larger GPU jobs should use a
 larger batch size when memory allows, for example `num_samples=100` and
 `batch_size=100`.
+
+CPU generation is intended as a compatibility and smoke-test path. Even a
+single molecule can take several minutes because all 1,000 diffusion steps run
+on the CPU; use OSC GPU jobs for normal throughput testing.

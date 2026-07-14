@@ -48,7 +48,7 @@ The GUI backend now treats the Docker-format conDitar image as the main runtime
 artifact. Build or load the image from `conDitar-dev`, then start the GUI:
 
 ```bash
-docker load -i /path/to/conditar-dev-docker.tar.gz
+docker load -i /path/to/localhost_conditar-dev_container-dev-20260710-105038.tar.gz
 CONDITAR_RUNTIME=docker python3 serve.py --open
 ```
 
@@ -146,13 +146,13 @@ script at a shared image archive. The batch job will run `podman load` only when
 the image is missing:
 
 ```bash
-CONDITAR_DOCKER_TAR=/fs/ess/PCON0041/path/to/conditar-dev-docker.tar
+CONDITAR_DOCKER_TAR=/fs/ess/PCON0041/path/to/localhost_conditar-dev_container-dev-20260710-105038.tar.gz
 ```
 
 On OSC, `start_osc_gui.sh` defaults this to:
 
 ```bash
-/fs/ess/PCON0041/mey200/container_images/conditar-dev-docker-vina.tar
+/fs/ess/PCON0041/mey200/container_images/localhost_conditar-dev_container-dev-20260710-105038.tar.gz
 ```
 
 Each Slurm job records the `slurm_job_id`, generated script, container command,
@@ -171,13 +171,15 @@ generated SDF records as properties such as:
 VINA_SCORE_ONLY
 VINA_MINIMIZE
 VINA_DOCK
+QVINA
 QED
 SA
 ```
 
-The Results page reads those SDF properties dynamically. When `VINA_SCORE_ONLY`
-is present, Vina appears in the candidate table, selected-molecule metrics,
-metric CSV export, and chart/sort metric controls.
+Choose `vina_score`, `vina_dock`, `qvina`, or `all` in the setup panel. The
+Results page reads the resulting SDF properties dynamically and exposes them in
+the candidate table, selected-molecule metrics, metric CSV export, and
+chart/sort metric controls.
 
 ## V1 test checklist
 

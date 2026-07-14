@@ -5,7 +5,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 export CONDITAR_RUNTIME="${CONDITAR_RUNTIME:-podman}"
 export CONDITAR_DOCKER_IMAGE="${CONDITAR_DOCKER_IMAGE:-localhost/conditar-dev:container-dev}"
-export CONDITAR_DOCKER_TAR="${CONDITAR_DOCKER_TAR:-/fs/ess/PCON0041/mey200/container_images/conditar-dev-docker-vina.tar}"
+export CONDITAR_DOCKER_TAR="${CONDITAR_DOCKER_TAR:-/fs/ess/PCON0041/mey200/container_images/localhost_conditar-dev_container-dev-20260710-105038.tar.gz}"
 if [[ -z "${CONDITAR_SOURCE_MOUNT:-}" && -d ../conDitar-dev ]]; then
   export CONDITAR_SOURCE_MOUNT="$(cd ../conDitar-dev && pwd)"
 fi
