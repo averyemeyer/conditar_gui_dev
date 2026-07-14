@@ -22,6 +22,7 @@ const state = {
   activeTab: "setup",
   resultSource: "upload",
   runtimeHealth: null,
+  targetTouched: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -77,7 +78,10 @@ function bindEvents() {
   });
   $("#reset-params").addEventListener("click", resetParameters);
   $("#preview-run").addEventListener("click", submitGenerationJob);
-  $("#job-target").addEventListener("change", updateJobTargetControls);
+  $("#job-target").addEventListener("change", () => {
+    state.targetTouched = true;
+    updateJobTargetControls();
+  });
   $("#refresh-pdb").addEventListener("click", () => chooseFileAgain("#pdb-input"));
   $("#refresh-sdf").addEventListener("click", () => chooseFileAgain("#sdf-input"));
   $("#vina-enabled").addEventListener("change", updateVinaControls);
@@ -120,12 +124,15 @@ async function refreshRuntime(showMessage = false) {
   try {
     const health = await service.health();
     state.runtimeHealth = health;
-    if ($("#job-target").value === "auto") updateJobTargetControls();
+    if (!state.targetTouched) {
+      $("#job-target").value = health.gpu_available && health.slurm?.sbatch ? "osc_gpu" : "local_cpu";
+      updateJobTargetControls();
+    }
     const slurm = health.slurm?.sbatch ? "sbatch available" : "sbatch not found";
     const gpu = health.gpu_available ? "GPU device visible" : "no local GPU visible";
     const gpuTarget = health.gpu_available && health.slurm?.sbatch;
     status.textContent = gpuTarget ? "OSC GPU available" : "Local CPU available";
-    detail.textContent = `${gpu}; ${slurm}. Automatic mode will use ${gpuTarget ? "OSC GPU" : "Local CPU"}.`;
+    detail.textContent = `${gpu}; ${slurm}. Selected target: ${gpuTarget ? "OSC GPU" : "Local CPU"}.`;
     if (showMessage) showToast("Runtime selection refreshed.");
   } catch (error) {
     status.textContent = "Backend unavailable";
@@ -135,8 +142,7 @@ async function refreshRuntime(showMessage = false) {
 }
 
 function resolvedTarget() {
-  if ($("#job-target").value !== "auto") return $("#job-target").value;
-  return state.runtimeHealth?.gpu_available && state.runtimeHealth?.slurm?.sbatch ? "osc_gpu" : "local_cpu";
+  return $("#job-target").value;
 }
 
 function chooseFileAgain(selector) {
@@ -632,7 +638,7 @@ function updateResultsSource() {
     $("#results-source").textContent = `Loaded ${count} generated SDF${count === 1 ? "" : "s"} from job ${state.selectedJob.id}.`;
     return;
   }
-  $("#results-source").textContent = "Preview example results are loaded. Select a completed job from Jobs to review generated outputs.";
+  $("#results-source").textContent = "Upload input structures and submit a job to review generated outputs here.";
 }
 
 function targetLabel(job) {
@@ -661,9 +667,7 @@ function inputLabel(job) {
 function updateJobTargetControls() {
   const target = resolvedTarget();
   $("#slurm-controls").hidden = target !== "osc_gpu";
-  $("#job-runtime-label").textContent = $("#job-target").value === "auto"
-    ? `Automatic → ${target === "osc_gpu" ? "OSC GPU" : "Local CPU"}`
-    : target === "osc_gpu" ? "OSC GPU" : "Local CPU";
+  $("#job-runtime-label").textContent = target === "osc_gpu" ? "OSC GPU" : "Local CPU";
   $("#param-device").value = target === "osc_gpu" ? "auto" : "cpu";
   state.parameters.device = target === "osc_gpu" ? "auto" : "cpu";
   updateBatchLabel();

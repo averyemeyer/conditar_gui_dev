@@ -31,8 +31,8 @@
           <p class="hero-copy">Add a protein structure, choose a few settings, and review generated candidates in 3D.</p>
         </div>
         <div class="study-status" aria-label="Loaded study summary">
-          <i></i><strong id="hero-candidate-count">100</strong> candidates ·
-          <span id="hero-input-mode">Ligand</span> input ·
+          <i></i><strong id="hero-candidate-count">0</strong> candidates ·
+          <span id="hero-input-mode">No input</span> ·
           <span id="hero-status">Ready</span>
         </div>
       </section>
@@ -53,12 +53,11 @@
           <div>
             <span class="field-label">Where should this run?</span>
             <select id="job-target">
-              <option value="auto" selected>Automatic (recommended)</option>
               <option value="local_cpu">This computer · CPU</option>
               <option value="osc_gpu">OSC GPU · Slurm/Podman</option>
             </select>
           </div>
-          <div class="runtime-readout"><span>Detected environment</span><strong id="runtime-status">Detecting…</strong><small id="runtime-detail">Automatic mode will choose the best available target.</small></div>
+          <div class="runtime-readout"><span>Detected environment</span><strong id="runtime-status">Detecting…</strong><small id="runtime-detail">Choosing a default target for this host.</small></div>
         </div>
         <div class="batch-mode-banner" id="batch-mode-banner" hidden role="status">
           <strong id="batch-mode-title">Batch ready</strong>
