@@ -49,6 +49,22 @@
           <div><p class="eyebrow">Step 1</p><h2>Set up a run</h2></div>
         </div>
 
+        <div class="execution-bar">
+          <div>
+            <span class="field-label">Execution target</span>
+            <select id="job-target">
+              <option value="local_cpu">Local CPU · Docker</option>
+              <option value="osc_gpu">OSC GPU · Slurm/Podman</option>
+            </select>
+          </div>
+          <div class="runtime-readout"><span>Backend check</span><strong id="runtime-status">Checking runtime…</strong><small id="runtime-detail">Detecting available container and scheduler tools.</small></div>
+          <button class="secondary-button compact-action" id="refresh-runtime" type="button">Refresh selection</button>
+        </div>
+        <div class="batch-mode-banner" id="batch-mode-banner" hidden role="status">
+          <strong>Batch mode active</strong>
+          <span id="batch-mode-message">Each selected folder will submit as a separate job.</span>
+        </div>
+
         <div class="setup-grid">
           <article class="panel input-panel">
             <div class="panel-heading"><div><h3>Input structures</h3></div><span class="required-label">PDB required</span></div>
@@ -101,22 +117,10 @@
           </div>
           <button class="primary-button" id="preview-run"><span>Generate molecules</span><b>→</b></button>
         </div>
-        <div class="batch-mode-banner" id="batch-mode-banner" hidden role="status">
-          <strong>Batch mode active</strong>
-          <span id="batch-mode-message">Each selected folder will submit as a separate job.</span>
-        </div>
-
         <div class="job-panel" id="job-panel">
           <div class="job-controls">
             <label class="field-label" for="job-email">Email when finished</label>
             <input id="job-email" type="email" placeholder="name@example.edu">
-          </div>
-          <div class="job-controls">
-            <label class="field-label" for="job-target">Run target</label>
-            <select id="job-target">
-              <option value="local_cpu">Local CPU</option>
-              <option value="osc_gpu">OSC GPU · Slurm</option>
-            </select>
           </div>
           <div class="slurm-controls" id="slurm-controls" hidden>
             <div>

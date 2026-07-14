@@ -70,6 +70,10 @@ export class ExampleDataService {
     return response.jobs;
   }
 
+  async health() {
+    return fetchJson("/api/health");
+  }
+
   async getJob(jobId) {
     const response = await fetchJson(`/api/jobs/${jobId}`);
     return response.job;

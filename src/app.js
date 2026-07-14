@@ -77,6 +77,7 @@ function bindEvents() {
   $("#reset-params").addEventListener("click", resetParameters);
   $("#preview-run").addEventListener("click", submitGenerationJob);
   $("#job-target").addEventListener("change", updateJobTargetControls);
+  $("#refresh-runtime").addEventListener("click", () => refreshRuntime(true));
   $("#vina-enabled").addEventListener("change", updateVinaControls);
   ["#vina-mode", "#vina-exhaustiveness", "#vina-cpu"].forEach((selector) => {
     $(selector).addEventListener("input", updateCommand);
@@ -105,6 +106,28 @@ function bindEvents() {
   window.addEventListener("resize", debounce(renderCharts, 120));
   updateJobTargetControls();
   updateVinaControls();
+  refreshRuntime(false);
+}
+
+async function refreshRuntime(showMessage = false) {
+  const status = $("#runtime-status");
+  const detail = $("#runtime-detail");
+  status.textContent = "Checking runtime…";
+  detail.textContent = "Detecting available container and scheduler tools.";
+  try {
+    const health = await service.health();
+    const container = health.container_backend || "unavailable";
+    const runtime = health.container_runtime || "not found";
+    const slurm = health.slurm?.sbatch ? "sbatch available" : "sbatch not found";
+    const gpu = health.gpu_available ? "GPU device visible" : "no local GPU visible";
+    status.textContent = `${container} · ${runtime}`;
+    detail.textContent = `${gpu}; ${slurm}. Select Local CPU or OSC GPU above; refresh after changing hosts or modules.`;
+    if (showMessage) showToast("Runtime selection refreshed.");
+  } catch (error) {
+    status.textContent = "Backend unavailable";
+    detail.textContent = error.message;
+    if (showMessage) showToast(`Runtime check failed: ${error.message}`);
+  }
 }
 
 async function setActiveTab(tab) {

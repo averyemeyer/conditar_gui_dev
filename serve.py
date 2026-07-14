@@ -62,6 +62,7 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
                     "ok": True,
                     "container_backend": JOB_MANAGER.container_runtime_kind,
                     "container_runtime": JOB_MANAGER.container_runtime,
+                    "gpu_available": bool(Path("/dev/nvidia0").exists()),
                     "docker_image": JOB_MANAGER.docker_image,
                     "docker_tar": JOB_MANAGER.docker_tar,
                     "slurm": {
