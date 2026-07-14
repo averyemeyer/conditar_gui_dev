@@ -116,6 +116,8 @@ class LocalJobManager:
         postprocess = self._postprocess_options(payload.get("postprocess") or {})
         command = self._build_command(paths, pdb_path, sdf_path, parameters, target, postprocess)
         slurm_options = self._slurm_options(payload.get("slurm") or {}) if target == "osc_gpu" else None
+        if target == "osc_gpu" and not slurm_options["account"]:
+            raise ValueError("OSC GPU jobs require a Slurm account number. Enter it in Run setup.")
         job = {
             "id": job_id,
             "target": target,
