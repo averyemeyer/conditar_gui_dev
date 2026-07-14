@@ -185,7 +185,16 @@
           <article class="panel jobs-table-panel">
             <div class="panel-heading list-heading">
               <div><h3>Runs</h3></div>
-              <button class="secondary-button compact-action" id="refresh-jobs">Refresh</button>
+              <div class="table-actions">
+                <select id="job-filter" class="compact-select">
+                  <option value="all">All jobs</option>
+                  <option value="active">Active</option>
+                  <option value="completed">Completed</option>
+                  <option value="failed">Failed</option>
+                  <option value="canceled">Canceled</option>
+                </select>
+                <button class="secondary-button compact-action" id="refresh-jobs">Refresh</button>
+              </div>
             </div>
             <div class="job-table-wrap">
               <table>
@@ -247,15 +256,18 @@
               <label class="search-box"><span>⌕</span><input id="result-search" type="search" placeholder="Search candidate ID"></label>
               <select id="result-sort" class="compact-select">
                 <option value="index">Generation order</option>
+                <option value="vina_dock">Vina dock</option>
+                <option value="vina_score_only">Vina score</option>
+                <option value="vina_minimize">Vina minimize</option>
+                <option value="qvina">QVina</option>
                 <option value="molecularWeight">Molecular weight</option>
                 <option value="heavyAtoms">Heavy atoms</option>
                 <option value="rings">Ring estimate</option>
-                <option value="vinaScore">Docking score</option>
               </select>
             </div>
             <div class="result-table-wrap">
               <table>
-                <thead><tr><th>Candidate</th><th>MW</th><th>Rings</th><th>Score</th></tr></thead>
+                <thead><tr><th>Candidate</th><th>SMILES</th><th>Score</th><th>Min</th><th>Dock/QVina</th><th>Status</th></tr></thead>
                 <tbody id="result-table"></tbody>
               </table>
             </div>

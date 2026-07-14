@@ -181,6 +181,8 @@ metric CSV export, and chart/sort metric controls.
 
 ## V1 test checklist
 
+For the full internal QA runbook, see [`INTERNAL_TESTING.md`](INTERNAL_TESTING.md).
+
 Before considering the CPU/GPU container and GUI backend v1 complete, run these
 small cases and confirm each completed job can be loaded from the Jobs tab into
 Results:

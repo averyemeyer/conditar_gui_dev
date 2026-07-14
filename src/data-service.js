@@ -82,8 +82,12 @@ export class ExampleDataService {
   async loadJobResults(job) {
     const response = await fetchJson(`/api/jobs/${job.id}/results`);
     return {
+      job: response.job || job,
       inputs: response.inputs || {},
-      candidates: response.files.map((file, index) => ({
+      artifacts: response.artifacts || [],
+      logs: response.logs || {},
+      summary: response.summary || {},
+      candidates: (response.files || []).map((file, index) => ({
         ...parseSdf(file.text, file.name),
         index,
         id: candidateId(index),

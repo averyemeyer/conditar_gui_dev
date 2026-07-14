@@ -17,6 +17,7 @@ const state = {
   currentJob: null,
   selectedJob: null,
   jobs: [],
+  jobFilter: "all",
   jobPollTimer: null,
   activeTab: "setup",
   resultSource: "example",
@@ -73,6 +74,10 @@ function bindEvents() {
     $(selector).addEventListener("input", updateCommand);
   });
   $("#refresh-jobs").addEventListener("click", () => refreshJobs(true));
+  $("#job-filter").addEventListener("change", (event) => {
+    state.jobFilter = event.target.value;
+    renderJobsTable();
+  });
   $("#result-search").addEventListener("input", renderResultsTable);
   $("#result-sort").addEventListener("change", renderResultsTable);
   $("#histogram-metric").addEventListener("change", renderCharts);
@@ -291,7 +296,10 @@ async function loadCompletedJob(job) {
   const result = await service.loadJobResults(job);
   const candidates = result.candidates || [];
   if (!candidates.length) {
-    showToast("Job completed but no SDF results were found.");
+    state.selectedJob = result.job || job;
+    updateJobDetail(state.selectedJob, result.logs?.stdout || result.logs?.stderr || "No SDF files were found in the job output directory.");
+    showToast(state.selectedJob?.error_message || "No SDF results were found for this job.");
+    setActiveTab("jobs");
     return;
   }
   const fallbackExample = state.study?.example || EXAMPLES[state.exampleId] || EXAMPLES["4aua"];
@@ -309,6 +317,9 @@ async function loadCompletedJob(job) {
     pdbText: pdbInput?.text || state.study?.pdbText || "",
     referenceSdf: sdfInput?.text || state.study?.referenceSdf || null,
     candidates,
+    artifacts: result.artifacts || [],
+    logs: result.logs || {},
+    summary: result.summary || {},
   };
   state.currentJob = job;
   state.selectedJob = job;
@@ -333,7 +344,9 @@ function updateJobDetail(job, logText) {
   $("#job-detail-id").textContent = job?.id || "None";
   $("#job-detail-target").textContent = targetLabel(job);
   $("#job-detail-started").textContent = formatDate(job?.started_at || job?.created_at);
-  $("#job-detail-log").textContent = trimLog(logText || "Select a job to view logs.");
+  const note = job?.status_note ? `${job.status_note}\n\n` : "";
+  const error = job?.error_message ? `Error: ${job.error_message}\n\n` : "";
+  $("#job-detail-log").textContent = trimLog(note + error + (logText || "Select a job to view logs."));
 }
 
 async function refreshJobs(showMessage = false) {
@@ -347,14 +360,23 @@ async function refreshJobs(showMessage = false) {
 }
 
 function renderJobsTable() {
-  const jobs = [...state.jobs].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  const jobs = [...state.jobs]
+    .filter((job) => {
+      if (state.jobFilter === "all") return true;
+      if (state.jobFilter === "active") return ["queued", "running"].includes(job.status);
+      return job.status === state.jobFilter;
+    })
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   $("#jobs-table").innerHTML = jobs.length ? jobs.map((job) => `
     <tr data-job-id="${escapeHtml(job.id)}" class="${state.selectedJob?.id === job.id ? "active" : ""}">
-      <td>${escapeHtml(job.id)}<br><small>${escapeHtml(job.mode || "run")}</small></td>
-      <td><span class="status-badge" data-status="${escapeHtml(job.status)}">${escapeHtml(job.status)}</span></td>
+      <td>${escapeHtml(shortJobId(job.id))}<br><small title="${escapeHtml(job.id)}">${escapeHtml(job.mode || "run")}</small></td>
+      <td><span class="status-badge" data-status="${escapeHtml(job.status)}">${escapeHtml(job.status)}</span>${job.status_note ? `<br><small>${escapeHtml(job.status_note)}</small>` : ""}</td>
       <td>${escapeHtml(targetLabel(job))}<br><small>${escapeHtml(inputLabel(job))}</small></td>
-      <td>${formatDate(job.created_at)}</td>
-      <td><button class="secondary-button compact-action load-job-results" ${job.status === "completed" ? "" : "disabled"}>Results</button></td>
+      <td>${formatDate(job.created_at)}<br><small>${escapeHtml(slurmLabel(job))}</small></td>
+      <td>
+        <button class="secondary-button compact-action load-job-results" ${job.status === "completed" ? "" : "disabled"}>Results</button>
+        <button class="secondary-button compact-action cancel-job" ${["completed", "failed", "canceled"].includes(job.status) ? "disabled" : ""}>Cancel</button>
+      </td>
     </tr>`).join("") : `<tr><td colspan="5">No jobs yet.</td></tr>`;
 
   $$("#jobs-table tr[data-job-id]").forEach((row) => row.addEventListener("click", async (event) => {
@@ -362,12 +384,30 @@ function renderJobsTable() {
     if (!job) return;
     state.selectedJob = job;
     renderJobsTable();
+    if (event.target.closest(".cancel-job")) {
+      await cancelJob(job.id);
+      return;
+    }
     const logs = await service.getJobLogs(job.id).catch(() => ({ stdout: "", stderr: "" }));
     updateJobDetail(job, logs.stdout || logs.stderr || "Logs are not available for this job yet.");
     if (event.target.closest(".load-job-results")) {
       await loadSelectedJobResults(job.id);
     }
   }));
+}
+
+async function cancelJob(jobId) {
+  try {
+    const response = await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || "Cancel failed.");
+    state.selectedJob = body.job;
+    await refreshJobs(false);
+    updateJobDetail(body.job, "Cancel requested.");
+    showToast("Job canceled.");
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 async function loadSelectedJobResults(jobId) {
@@ -432,8 +472,18 @@ function filteredCandidates() {
   const query = $("#result-search").value.trim().toLowerCase();
   const sort = $("#result-sort").value;
   return candidates
-    .filter((item) => item.id.toLowerCase().includes(query) || item.formula.toLowerCase().includes(query))
-    .sort((a, b) => sort === "index" ? a.index - b.index : compareMetric(b[sort], a[sort]));
+    .filter((item) => {
+      if (!query) return true;
+      return [
+        item.id,
+        item.name,
+        item.formula,
+        item.smiles,
+        item.properties?.SMILES,
+        item.properties?.VINA_STATUS,
+      ].some((value) => String(value || "").toLowerCase().includes(query));
+    })
+    .sort((a, b) => sort === "index" ? a.index - b.index : compareMetric(candidateMetric(b, sort), candidateMetric(a, sort)));
 }
 
 function renderResultsTable() {
@@ -441,8 +491,12 @@ function renderResultsTable() {
   $("#visible-count").textContent = `${candidates.length} shown`;
   $("#result-table").innerHTML = candidates.map((item) => `
     <tr data-index="${item.index}" class="${state.selected?.index === item.index ? "active" : ""}">
-      <td>${item.id}<br><small>${item.formula}</small></td>
-      <td>${item.molecularWeight}</td><td>${item.rings}</td><td>${formatMetric(item.vinaScore)}</td>
+      <td>${escapeHtml(item.id)}<br><small>${escapeHtml(item.formula)}</small></td>
+      <td class="smiles-cell" title="${escapeHtml(item.smiles || item.properties?.SMILES || "")}">${escapeHtml(item.smiles || item.properties?.SMILES || "-")}</td>
+      <td>${formatMetric(propertyMetric(item, "VINA_SCORE_ONLY"))}</td>
+      <td>${formatMetric(propertyMetric(item, "VINA_MINIMIZE"))}</td>
+      <td>${formatMetric(propertyMetric(item, "VINA_DOCK") ?? propertyMetric(item, "QVINA") ?? item.vinaScore)}</td>
+      <td>${escapeHtml(item.properties?.VINA_STATUS || (item.vinaScore !== null ? "scored" : "-"))}</td>
     </tr>`).join("");
   $$("#result-table tr").forEach((row) => row.addEventListener("click", () => {
     state.selected = state.study.candidates.find((item) => item.index === Number(row.dataset.index));
@@ -450,6 +504,19 @@ function renderResultsTable() {
     renderSelectedStructure();
     renderCharts();
   }));
+}
+
+function propertyMetric(item, key) {
+  const value = Number.parseFloat(item.properties?.[key]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function candidateMetric(item, key) {
+  if (key === "vina_score_only") return propertyMetric(item, "VINA_SCORE_ONLY");
+  if (key === "vina_minimize") return propertyMetric(item, "VINA_MINIMIZE");
+  if (key === "vina_dock") return propertyMetric(item, "VINA_DOCK");
+  if (key === "qvina") return propertyMetric(item, "QVINA");
+  return item[key];
 }
 
 function renderCharts() {
@@ -507,9 +574,12 @@ function setView(view) {
 }
 
 function updateResultsSource() {
-  $("#results-source").textContent = state.resultSource === "job" && state.selectedJob
-    ? `Loaded generated outputs from job ${state.selectedJob.id}.`
-    : "Preview example results are loaded. Select a completed job from Jobs to review generated outputs.";
+  if (state.resultSource === "job" && state.selectedJob) {
+    const count = state.study?.summary?.sdf_count ?? state.study?.candidates?.length ?? 0;
+    $("#results-source").textContent = `Loaded ${count} generated SDF${count === 1 ? "" : "s"} from job ${state.selectedJob.id}.`;
+    return;
+  }
+  $("#results-source").textContent = "Preview example results are loaded. Select a completed job from Jobs to review generated outputs.";
 }
 
 function targetLabel(job) {
@@ -517,6 +587,18 @@ function targetLabel(job) {
   if (job.target === "local_cpu") return "Local CPU";
   if (job.target === "osc_gpu") return "OSC GPU";
   return job.target || "Local CPU";
+}
+
+function shortJobId(jobId) {
+  const text = String(jobId || "");
+  return text.length > 22 ? `${text.slice(0, 15)}…${text.slice(-6)}` : text;
+}
+
+function slurmLabel(job) {
+  const slurm = job?.slurm || {};
+  if (slurm.job_id && slurm.state) return `Slurm ${slurm.job_id} · ${slurm.state}`;
+  if (slurm.job_id) return `Slurm ${slurm.job_id}`;
+  return job?.target === "osc_gpu" ? "Slurm pending" : "";
 }
 
 function inputLabel(job) {
@@ -673,14 +755,24 @@ async function groupBatchFiles(files) {
     byFolder.get(folder).push(file);
   });
   const jobs = [];
+  const skipped = [];
   for (const [folder, folderFiles] of byFolder) {
-    const pdbFile = folderFiles.find((file) => file.name.toLowerCase().endsWith(".pdb"));
-    const sdfFile = folderFiles.find((file) => file.name.toLowerCase().endsWith(".sdf"));
-    if (!pdbFile) continue;
+    const pdbFile = chooseInputFile(folderFiles, ".pdb", ["protein", "pocket"]);
+    const sdfFile = chooseInputFile(folderFiles, ".sdf", ["ligand", "reference", "ref"]);
+    if (!pdbFile) {
+      skipped.push(`${folder}: no PDB`);
+      continue;
+    }
     const pdbText = await readValidatedTextFile(pdbFile, "pdb", false);
     const sdfText = sdfFile ? await readValidatedTextFile(sdfFile, "sdf", false) : null;
-    if (!pdbText) continue;
-    if (state.mode === "reference" && !sdfText) continue;
+    if (!pdbText) {
+      skipped.push(`${folder}: invalid PDB`);
+      continue;
+    }
+    if (state.mode === "reference" && !sdfText) {
+      skipped.push(`${folder}: no valid SDF`);
+      continue;
+    }
     jobs.push({
       name: folder,
       pdb: { name: pdbFile.name, text: pdbText },
@@ -692,7 +784,21 @@ async function groupBatchFiles(files) {
       ? "No valid batch folders found. Each folder needs a PDB and SDF in reference mode."
       : "No valid batch folders found. Each folder needs a PDB.");
   }
+  if (skipped.length) {
+    showToast(`${jobs.length} folder${jobs.length === 1 ? "" : "s"} ready; ${skipped.length} skipped.`);
+    console.warn("Skipped batch folders", skipped);
+  }
   return jobs;
+}
+
+function chooseInputFile(files, extension, preferredTokens = []) {
+  const candidates = files.filter((file) => file.name.toLowerCase().endsWith(extension));
+  if (!candidates.length) return null;
+  const preferred = candidates.find((file) => {
+    const name = file.name.toLowerCase();
+    return preferredTokens.some((token) => name.includes(token)) && !name.includes("generated");
+  });
+  return preferred || candidates.find((file) => !file.name.toLowerCase().includes("generated")) || candidates[0];
 }
 
 async function readValidatedTextFile(file, kind, showError = true) {
@@ -750,6 +856,9 @@ async function downloadAll() {
   state.study.candidates.forEach((item) => structures.file(item.name, item.text));
   zip.file("metrics.csv", csvText());
   zip.file("run_config.json", JSON.stringify(buildConfiguration(), null, 2));
+  if (state.study.logs?.stdout) zip.file("logs/stdout.log", state.study.logs.stdout);
+  if (state.study.logs?.stderr) zip.file("logs/stderr.log", state.study.logs.stderr);
+  if (state.study.summary) zip.file("job_summary.json", JSON.stringify(state.study.summary, null, 2));
   if (state.study.pdbText) zip.file(filenameOnly(state.study.example.pdb || "input.pdb"), state.study.pdbText);
   if (state.study.referenceSdf) zip.file(filenameOnly(state.study.example.sdf || "reference.sdf"), state.study.referenceSdf);
   const blob = await zip.generateAsync({ type: "blob" });

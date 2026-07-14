@@ -212,6 +212,7 @@ class LocalJobManager:
                     "text": path.read_text(errors="replace"),
                 }
         files = []
+        artifacts = []
         if paths.outputs.exists():
             for path in sorted(paths.outputs.rglob("*.sdf")):
                 files.append({
@@ -219,7 +220,27 @@ class LocalJobManager:
                     "relative_path": str(path.relative_to(paths.root)),
                     "text": path.read_text(errors="replace"),
                 })
-        return {"job_id": job_id, "inputs": inputs, "files": files}
+            for path in sorted(paths.outputs.rglob("*")):
+                if not path.is_file() or path.suffix.lower() == ".sdf":
+                    continue
+                artifacts.append({
+                    "name": path.name,
+                    "relative_path": str(path.relative_to(paths.root)),
+                    "size": path.stat().st_size,
+                })
+        return {
+            "job_id": job_id,
+            "job": job,
+            "inputs": inputs,
+            "files": files,
+            "artifacts": artifacts,
+            "logs": self.logs(job_id),
+            "summary": {
+                "sdf_count": len(files),
+                "artifact_count": len(artifacts),
+                "output_directory": str(paths.outputs),
+            },
+        }
 
     def cancel(self, job_id: str) -> dict:
         job = self.get_job(job_id)
@@ -639,6 +660,7 @@ class LocalJobManager:
 
         state = self._slurm_state(job)
         if state:
+            job["status_note"] = None
             job.setdefault("slurm", {})["state"] = state
             if state in SLURM_PENDING_STATES:
                 job["status"] = "queued"
@@ -658,6 +680,15 @@ class LocalJobManager:
                 job["exit_code"] = 1
                 job["error_message"] = f"Slurm job ended with state {state}."
                 self._send_email(job, paths)
+            self._write_job(paths, job)
+        elif job.get("target") == "osc_gpu":
+            if any(path.exists() and path.stat().st_size > 0 for path in (paths.stdout, paths.stderr)):
+                if job.get("status") == "queued":
+                    job["status"] = "running"
+                    job["started_at"] = job.get("started_at") or utc_now()
+                job["status_note"] = "Slurm status temporarily unavailable; logs indicate the job has started."
+            else:
+                job["status_note"] = "Slurm status temporarily unavailable."
             self._write_job(paths, job)
         return job
 
@@ -747,14 +778,21 @@ class LocalJobManager:
             return
         job["exit_code"] = exit_code
         job["finished_at"] = utc_now()
-        job["status"] = "completed" if exit_code == 0 else "failed"
+        output_count = len(list(paths.outputs.rglob("*.sdf"))) if paths.outputs.exists() else 0
+        job["outputs"]["sdf_count"] = output_count
+        job["status"] = "completed" if exit_code == 0 and output_count > 0 else "failed"
         if exit_code != 0:
             job["error_message"] = f"Command exited with status {exit_code}."
+        elif output_count == 0:
+            job["exit_code"] = 1
+            job["error_message"] = "Command completed but no SDF outputs were found."
         self._write_job(paths, job)
         self._send_email(job, paths)
 
     def _send_email(self, job: dict, paths: JobPaths) -> None:
         if not job.get("email"):
+            return
+        if job.get("notification_sent_at"):
             return
         subject = f"conDitar job {job['status']}: {job['id']}"
         body = "\n".join([
@@ -768,13 +806,26 @@ class LocalJobManager:
         smtp_host = os.environ.get("CONDITAR_SMTP_HOST")
         if smtp_host:
             self._send_smtp_email(job, paths, subject, body)
+            job["notification_sent_at"] = utc_now()
+            self._write_job(paths, job)
             return
         sendmail = shutil.which("sendmail")
         if sendmail:
             message = f"Subject: {subject}\nTo: {job['email']}\n\n{body}\n"
-            subprocess.run([sendmail, "-t"], input=message, text=True, check=False)
+            result = subprocess.run([sendmail, "-t"], input=message, text=True, capture_output=True, check=False)
+            if result.returncode == 0:
+                job["notification_sent_at"] = utc_now()
+                self._write_job(paths, job)
+                return
+            (paths.logs / "email_notice.txt").write_text(
+                f"To: {job['email']}\nSubject: {subject}\n\n{body}\n\nsendmail delivery failed:\n{result.stderr}\n"
+            )
+            job["notification_sent_at"] = utc_now()
+            self._write_job(paths, job)
             return
         (paths.logs / "email_notice.txt").write_text(f"To: {job['email']}\nSubject: {subject}\n\n{body}\n")
+        job["notification_sent_at"] = utc_now()
+        self._write_job(paths, job)
 
     def _send_smtp_email(self, job: dict, paths: JobPaths, subject: str, body: str) -> None:
         msg = EmailMessage()
