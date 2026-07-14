@@ -59,7 +59,6 @@
             </select>
           </div>
           <div class="runtime-readout"><span>Detected environment</span><strong id="runtime-status">Detecting…</strong><small id="runtime-detail">Automatic mode will choose the best available target.</small></div>
-          <button class="secondary-button compact-action" id="refresh-runtime" type="button">Refresh</button>
         </div>
         <div class="batch-mode-banner" id="batch-mode-banner" hidden role="status">
           <strong id="batch-mode-title">Batch ready</strong>
@@ -83,13 +82,13 @@
               <input id="pdb-input" type="file" accept=".pdb">
               <div class="file-icon">PDB</div>
               <div><strong id="pdb-name">Choose a PDB file</strong><span id="pdb-detail">Required · uploaded with this job</span></div>
-              <button class="text-button" type="button">Replace</button>
+              <button class="text-button" id="refresh-pdb" type="button">Choose / refresh</button>
             </div>
             <div class="dropzone" id="sdf-dropzone">
               <input id="sdf-input" type="file" accept=".sdf">
               <div class="file-icon accent">SDF</div>
               <div><strong id="sdf-name">Choose a reference SDF</strong><span id="sdf-detail">Required for protein + ligand mode</span></div>
-              <button class="text-button" type="button">Replace</button>
+              <button class="text-button" id="refresh-sdf" type="button">Choose / refresh</button>
             </div>
             <div class="dropzone folder-dropzone" id="folder-dropzone">
               <input id="folder-input" type="file" webkitdirectory directory multiple>

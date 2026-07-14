@@ -78,7 +78,8 @@ function bindEvents() {
   $("#reset-params").addEventListener("click", resetParameters);
   $("#preview-run").addEventListener("click", submitGenerationJob);
   $("#job-target").addEventListener("change", updateJobTargetControls);
-  $("#refresh-runtime").addEventListener("click", () => refreshRuntime(true));
+  $("#refresh-pdb").addEventListener("click", () => chooseFileAgain("#pdb-input"));
+  $("#refresh-sdf").addEventListener("click", () => chooseFileAgain("#sdf-input"));
   $("#vina-enabled").addEventListener("change", updateVinaControls);
   ["#vina-mode", "#vina-exhaustiveness", "#vina-cpu"].forEach((selector) => {
     $(selector).addEventListener("input", updateCommand);
@@ -136,6 +137,12 @@ async function refreshRuntime(showMessage = false) {
 function resolvedTarget() {
   if ($("#job-target").value !== "auto") return $("#job-target").value;
   return state.runtimeHealth?.gpu_available && state.runtimeHealth?.slurm?.sbatch ? "osc_gpu" : "local_cpu";
+}
+
+function chooseFileAgain(selector) {
+  const input = $(selector);
+  input.value = "";
+  input.click();
 }
 
 async function setActiveTab(tab) {
