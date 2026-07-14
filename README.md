@@ -76,6 +76,13 @@ dependencies, model/checkpoint files, or container setup changes. The OSC helper
 script automatically uses `../conDitar-dev` as `CONDITAR_SOURCE_MOUNT` when that
 sibling checkout exists.
 
+The setup page accepts uploaded PDB/SDF files or a folder of paired inputs; it no
+longer requires a preloaded example. Uploaded files are copied into the job's
+private `job_data/jobs/<job-id>/inputs/` directory. Generated SDFs, logs, and
+metadata are written to the matching `outputs/` and `logs/` directories. The
+browser does not pass arbitrary client filesystem paths into the container.
+Results are loaded from the selected completed job and can be downloaded as a ZIP.
+
 Runtime selection:
 
 - `CONDITAR_RUNTIME=auto` prefers Podman, then Docker.

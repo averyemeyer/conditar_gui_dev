@@ -56,22 +56,22 @@
               <button class="active" data-mode="reference">Protein + reference ligand</button>
               <button data-mode="pocket">Pocket only</button>
             </div>
-            <label class="field-label" for="example-select">Example dataset</label>
+            <label class="field-label" for="example-select">Optional demo dataset</label>
             <select id="example-select">
+              <option value="custom" selected>Upload your own files</option>
               <option value="4aua">4AUA · protein + ligand</option>
               <option value="xxxx">XXXX · prepared pocket</option>
-              <option value="custom">Custom upload</option>
             </select>
             <div class="dropzone" id="pdb-dropzone">
               <input id="pdb-input" type="file" accept=".pdb">
               <div class="file-icon">PDB</div>
-              <div><strong id="pdb-name">4aua_protein.pdb</strong><span id="pdb-detail">2,051 records · bundled example</span></div>
+              <div><strong id="pdb-name">Choose a PDB file</strong><span id="pdb-detail">Required · uploaded with this job</span></div>
               <button class="text-button" type="button">Replace</button>
             </div>
             <div class="dropzone" id="sdf-dropzone">
               <input id="sdf-input" type="file" accept=".sdf">
               <div class="file-icon accent">SDF</div>
-              <div><strong id="sdf-name">4aua_ligand.sdf</strong><span id="sdf-detail">Reference ligand · bundled example</span></div>
+              <div><strong id="sdf-name">Choose a reference SDF</strong><span id="sdf-detail">Required for protein + ligand mode</span></div>
               <button class="text-button" type="button">Replace</button>
             </div>
             <div class="dropzone folder-dropzone" id="folder-dropzone">
@@ -87,7 +87,7 @@
             <div class="panel-heading"><div><h3>Run settings</h3></div><button class="text-button" id="reset-params">Reset</button></div>
             <div id="parameter-fields" class="parameter-fields"></div>
             <details class="advanced-options">
-              <summary>Advanced settings <span>8 options</span></summary>
+              <summary>Advanced settings <span>runtime-managed paths</span></summary>
               <div id="advanced-fields" class="parameter-fields advanced-grid"></div>
             </details>
           </article>
@@ -96,7 +96,7 @@
         <div class="run-bar">
           <div>
             <strong>Ready to generate</strong>
-            <span class="run-summary">Local CPU and OSC GPU jobs run in the background and update this page when finished.</span>
+            <span class="run-summary">Uploaded inputs are staged per job; outputs and logs are stored in that job's folder.</span>
             <code id="command-preview" hidden></code>
           </div>
           <button class="primary-button" id="preview-run"><span>Generate molecules</span><b>→</b></button>

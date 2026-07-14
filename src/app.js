@@ -7,7 +7,7 @@ const service = new ExampleDataService();
 const state = {
   study: null,
   selected: null,
-  exampleId: "4aua",
+  exampleId: "custom",
   mode: "reference",
   view: "3d",
   parameters: Object.fromEntries([...PARAMETERS, ...ADVANCED_PARAMETERS].map((item) => [item.key, item.value])),
@@ -20,7 +20,7 @@ const state = {
   jobFilter: "all",
   jobPollTimer: null,
   activeTab: "setup",
-  resultSource: "example",
+  resultSource: "upload",
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -34,7 +34,9 @@ function initialize() {
     $("#advanced-fields"),
   );
   bindEvents();
-  loadExample("4aua");
+  setMode("reference", false);
+  updateInputLabels(null);
+  updateCommand();
   refreshJobs(false);
   setActiveTab("setup");
 }
@@ -52,6 +54,12 @@ function bindEvents() {
   $("#example-select").addEventListener("change", (event) => {
     if (event.target.value === "custom") {
       state.exampleId = "custom";
+      state.study = null;
+      state.selected = null;
+      state.resultSource = "upload";
+      updateInputLabels(null);
+      renderSummary();
+      renderResultsTable();
       showToast("Upload custom input structures, then submit a local CPU job.");
       return;
     }
@@ -153,20 +161,23 @@ function setMode(mode, updateSelect = true) {
     : "The prepared pocket PDB supplies the generation region without a reference ligand.";
   $("#hero-input-mode").textContent = mode === "reference" ? "Ligand" : "Pocket";
   if (updateSelect) {
-    const matching = Object.values(EXAMPLES).find((example) => example.mode === mode);
-    if (matching) {
-      $("#example-select").value = matching.id;
-      loadExample(matching.id);
+    if (state.exampleId !== "custom") {
+      state.exampleId = "custom";
+      state.study = null;
+      state.selected = null;
+      state.resultSource = "upload";
+      updateInputLabels(null);
     }
+    $("#example-select").value = "custom";
   }
   updateCommand();
 }
 
 function updateInputLabels(example) {
-  $("#pdb-name").textContent = example.pdb.split("/").pop();
-  $("#pdb-detail").textContent = `${example.pdbRecords} · bundled example`;
-  $("#sdf-name").textContent = example.sdf ? example.sdf.split("/").pop() : "No reference ligand";
-  $("#sdf-detail").textContent = example.sdf ? "Reference ligand · bundled example" : "Pocket-only conditioning";
+  $("#pdb-name").textContent = example ? example.pdb.split("/").pop() : "Choose a PDB file";
+  $("#pdb-detail").textContent = example ? `${example.pdbRecords} · demo dataset` : "Required · uploaded with this job";
+  $("#sdf-name").textContent = example?.sdf ? example.sdf.split("/").pop() : "Choose a reference SDF";
+  $("#sdf-detail").textContent = example?.sdf ? "Reference ligand · demo dataset" : "Required for protein + ligand mode";
 }
 
 function renderStudy() {
@@ -216,14 +227,14 @@ async function submitGenerationJob() {
 }
 
 function buildJobPayload(inputOverride = null) {
-  const example = EXAMPLES[state.exampleId] || EXAMPLES["4aua"];
-  const pdb = inputOverride?.pdb || state.customPdb || {
-    name: example.pdb.split("/").pop(),
-    text: state.study?.pdbText,
-  };
+  const example = EXAMPLES[state.exampleId];
+  const pdb = inputOverride?.pdb || state.customPdb || (state.study?.pdbText ? {
+    name: example?.pdb.split("/").pop() || "input.pdb",
+    text: state.study.pdbText,
+  } : null);
   const sdf = state.mode === "reference"
     ? (inputOverride?.sdf || state.customSdf || (state.study?.referenceSdf ? {
-      name: example.sdf?.split("/").pop() || "reference.sdf",
+      name: example?.sdf?.split("/").pop() || "reference.sdf",
       text: state.study.referenceSdf,
     } : null))
     : null;
@@ -665,13 +676,12 @@ function compareMetric(a, b) {
 }
 
 function updateCommand() {
-  const example = EXAMPLES[state.exampleId] || EXAMPLES["4aua"];
   const pdbName = state.batchInputs.length
     ? `${state.batchInputs.length} folders`
-    : (state.customPdb?.name || example.pdb);
-  const sdfName = state.customSdf?.name || example.sdf;
+    : (state.customPdb?.name || EXAMPLES[state.exampleId]?.pdb || "<choose PDB>");
+  const sdfName = state.customSdf?.name || EXAMPLES[state.exampleId]?.sdf;
   const args = [
-    `python sample.py ${state.parameters.config}`,
+    "conditar-sample",
     `--device ${state.parameters.device}`,
     `--num_samples ${state.parameters.num_samples}`,
     `--batch_size ${state.parameters.batch_size}`,

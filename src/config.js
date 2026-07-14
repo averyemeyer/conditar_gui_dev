@@ -7,12 +7,7 @@ export const PARAMETERS = [
   { key: "atom_enc_mode", label: "Atom encoding", type: "select", value: "add_aromatic", options: ["add_aromatic", "basic"], help: "Generated atom representation" },
 ];
 
-export const ADVANCED_PARAMETERS = [
-  { key: "config", label: "Model config", type: "text", value: "configs/sample.yml" },
-  { key: "result_path", label: "Result path", type: "text", value: "results" },
-  { key: "tmp_dir", label: "Temporary directory", type: "text", value: "../tmp" },
-  { key: "protein_root", label: "Protein root", type: "text", value: "examples" },
-];
+export const ADVANCED_PARAMETERS = [];
 
 export const EXAMPLES = {
   "4aua": {
