@@ -610,8 +610,9 @@ function renderCharts() {
   if (state.histogramThreshold === null || state.histogramThreshold < min || state.histogramThreshold > max) state.histogramThreshold = min;
   slider.value = state.histogramThreshold;
   $("#histogram-threshold-value").textContent = Number(state.histogramThreshold).toFixed(1);
-  const passing = values.filter((value) => value >= state.histogramThreshold).length;
-  $("#histogram-tooltip").textContent = `${passing}/${values.length} molecules are at or above the threshold.`;
+  const lowerIsBetter = metric === "vinaScore";
+  const passing = values.filter((value) => lowerIsBetter ? value <= state.histogramThreshold : value >= state.histogramThreshold).length;
+  $("#histogram-tooltip").textContent = `${passing}/${values.length} molecules meet the threshold (${lowerIsBetter ? "at or below" : "at or above"}).`;
   drawHistogram($("#histogram"), values, label, state.histogramThreshold);
 }
 
