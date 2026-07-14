@@ -24,6 +24,8 @@ const state = {
   runtimeHealth: null,
   targetTouched: false,
   histogramThreshold: null,
+  exportSelection: new Set(),
+  exportSelectionInitialized: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -100,6 +102,11 @@ function bindEvents() {
   $("#histogram-threshold").addEventListener("input", (event) => {
     state.histogramThreshold = Number(event.target.value);
     $("#histogram-threshold-value").textContent = Number(event.target.value).toFixed(1);
+    const metric = $("#histogram-metric").value;
+    state.exportSelection = new Set((state.study?.candidates || []).filter((item) => {
+      const value = Number(item[metric]);
+      return Number.isFinite(value) && (metric === "vinaScore" ? value <= state.histogramThreshold : value >= state.histogramThreshold);
+    }).map((item) => item.id));
     renderCharts();
     renderResultsTable();
   });
@@ -115,6 +122,8 @@ function bindEvents() {
   $("#download-config").addEventListener("click", downloadConfig);
   $("#download-all").addEventListener("click", downloadAll);
   $("#export-filtered").addEventListener("change", updateExportScope);
+  $("#select-all-candidates").addEventListener("click", () => { state.exportSelection = new Set(state.study?.candidates?.map((item) => item.id) || []); renderResultsTable(); });
+  $("#clear-candidate-selection").addEventListener("click", () => { state.exportSelection.clear(); renderResultsTable(); });
   $("#theme-toggle").addEventListener("click", () => document.body.classList.toggle("high-contrast"));
   $("#pdb-input").addEventListener("change", handlePdbUpload);
   $("#sdf-input").addEventListener("change", handleSdfUpload);
@@ -193,6 +202,8 @@ async function loadExample(exampleId) {
       $("#hero-status").textContent = `${Math.round((loaded / total) * 100)}%`;
     });
     state.selected = state.study.candidates[0] || null;
+    state.exportSelection = new Set();
+    state.exportSelectionInitialized = false;
     state.resultSource = "example";
     state.selectedJob = null;
     $("#hero-candidate-count").textContent = state.study.candidates.length;
@@ -394,6 +405,8 @@ async function loadCompletedJob(job) {
   state.selectedJob = job;
   state.resultSource = "job";
   state.selected = candidates[0];
+  state.exportSelection = new Set();
+  state.exportSelectionInitialized = false;
   $("#hero-candidate-count").textContent = candidates.length;
   $("#hero-status").textContent = "Completed";
   renderStudy();
@@ -552,13 +565,6 @@ function filteredCandidates() {
         item.properties?.VINA_STATUS,
       ].some((value) => String(value || "").toLowerCase().includes(query));
     })
-    .filter((item) => {
-      if (state.histogramThreshold === null) return true;
-      const metric = $("#histogram-metric").value;
-      const value = Number(item[metric]);
-      if (!Number.isFinite(value)) return false;
-      return metric === "vinaScore" ? value <= state.histogramThreshold : value >= state.histogramThreshold;
-    })
     .sort((a, b) => sort === "index" ? a.index - b.index : compareMetric(candidateMetric(b, sort), candidateMetric(a, sort)));
 }
 
@@ -568,12 +574,18 @@ function renderResultsTable() {
   updateExportScope();
   $("#result-table").innerHTML = candidates.map((item) => `
     <tr data-index="${item.index}" class="${state.selected?.index === item.index ? "active" : ""}">
+      <td><input class="candidate-export-toggle" type="checkbox" data-candidate-id="${escapeHtml(item.id)}" ${state.exportSelection.has(item.id) ? "checked" : ""} aria-label="Export ${escapeHtml(item.id)}"></td>
       <td>${escapeHtml(item.id)}<br><small>${escapeHtml(item.formula)}</small></td>
       <td class="smiles-cell" title="${escapeHtml(item.smiles || item.properties?.SMILES || "")}">${escapeHtml(item.smiles || item.properties?.SMILES || "-")}</td>
       <td>${formatMetric(propertyMetric(item, "VINA_SCORE_ONLY"))}</td>
       <td>${formatMetric(propertyMetric(item, "VINA_MINIMIZE"))}</td>
       <td>${formatMetric(propertyMetric(item, "VINA_DOCK") ?? propertyMetric(item, "QVINA") ?? item.vinaScore)}</td>
     </tr>`).join("");
+  $$("#result-table .candidate-export-toggle").forEach((input) => input.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (input.checked) state.exportSelection.add(input.dataset.candidateId); else state.exportSelection.delete(input.dataset.candidateId);
+    updateExportScope();
+  }));
   $$("#result-table tr").forEach((row) => row.addEventListener("click", () => {
     state.selected = state.study.candidates.find((item) => item.index === Number(row.dataset.index));
     renderResultsTable();
@@ -610,6 +622,14 @@ function renderCharts() {
   const min = Math.min(...values); const max = Math.max(...values);
   slider.disabled = false; slider.min = min; slider.max = max; slider.step = (max - min || 1) / 100;
   if (state.histogramThreshold === null || state.histogramThreshold < min || state.histogramThreshold > max) state.histogramThreshold = min;
+  if (!state.exportSelectionInitialized) {
+    const lowerIsBetter = metric === "vinaScore";
+    state.exportSelection = new Set(state.study.candidates.filter((item) => {
+      const value = Number(item[metric]);
+      return Number.isFinite(value) && (lowerIsBetter ? value <= state.histogramThreshold : value >= state.histogramThreshold);
+    }).map((item) => item.id));
+    state.exportSelectionInitialized = true;
+  }
   slider.value = state.histogramThreshold;
   $("#histogram-threshold-value").textContent = Number(state.histogramThreshold).toFixed(1);
   const lowerIsBetter = metric === "vinaScore";
@@ -1041,7 +1061,8 @@ function csvText(candidates = filteredCandidates()) {
 }
 
 function exportCandidates() {
-  return $("#export-filtered")?.checked ? filteredCandidates() : (state.study?.candidates || []);
+  if (!$("#export-filtered")?.checked) return state.study?.candidates || [];
+  return (state.study?.candidates || []).filter((item) => state.exportSelection.has(item.id));
 }
 
 function updateExportScope() {

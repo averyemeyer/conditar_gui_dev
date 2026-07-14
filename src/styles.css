@@ -211,6 +211,8 @@ tbody tr:hover, tbody tr.active { background: var(--accent-soft); }
 .download-actions { display: flex; gap: 8px; }
 .export-scope { display: block; margin-top: 10px; color: var(--muted); font-size: 11px; }
 .export-scope input { margin-right: 6px; accent-color: var(--accent); }
+.export-selection-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.export-selection-actions small { color: var(--muted); font-size: 10px; }
 .export-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 16px; }
 .export-card { min-height: 210px; padding: 23px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .export-card.featured { background: #1d2b28; color: white; border-color: #1d2b28; }

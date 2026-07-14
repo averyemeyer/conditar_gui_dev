@@ -277,7 +277,7 @@
             </div>
             <div class="result-table-wrap">
               <table>
-                <thead><tr><th>Candidate</th><th>SMILES</th><th>Vina score</th><th>Vina minimize</th><th>Vina dock / QVina</th></tr></thead>
+                <thead><tr><th>Export</th><th>Candidate</th><th>SMILES</th><th>Vina score</th><th>Vina minimize</th><th>Vina dock / QVina</th></tr></thead>
                 <tbody id="result-table"></tbody>
               </table>
             </div>
@@ -323,7 +323,8 @@
             <button class="secondary-button" id="download-config">Run JSON</button>
           </div>
         </div>
-        <label class="export-scope"><input id="export-filtered" type="checkbox" checked> Export the current threshold/search-filtered subset <span id="export-scope-count"></span></label>
+        <label class="export-scope"><input id="export-filtered" type="checkbox" checked> Export the selected subset <span id="export-scope-count"></span></label>
+        <div class="export-selection-actions"><button class="secondary-button compact-action" id="select-all-candidates" type="button">Select all</button><button class="secondary-button compact-action" id="clear-candidate-selection" type="button">Clear selection</button><small>Changing the threshold updates the selected set; you can adjust it from the table.</small></div>
       </section>
     </main>
 
