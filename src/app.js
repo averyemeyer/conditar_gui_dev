@@ -877,8 +877,9 @@ function updateBatchLabel() {
     ? `Generate will submit ${count} ${resolvedTarget() === "osc_gpu" ? "independent Slurm" : "serial queued CPU"} job${count === 1 ? "" : "s"}`
     : "Optional: one PDB and optional SDF per folder";
   $("#batch-mode-banner").hidden = !count;
+  $("#batch-mode-title").textContent = resolvedTarget() === "osc_gpu" ? "Parallel GPU batch" : "Queued CPU batch";
   $("#batch-mode-message").textContent = count
-    ? `${count} folder${count === 1 ? "" : "s"} ready. ${resolvedTarget() === "osc_gpu" ? "Each folder becomes an independent OSC GPU Slurm job, so Slurm can run them in parallel." : "Each folder becomes one local CPU job in a serial queue."} This will not run one combined molecule set.`
+    ? `${count} folder${count === 1 ? "" : "s"} ready. ${resolvedTarget() === "osc_gpu" ? "Parallel GPU batch ready: Slurm will process the folders concurrently when capacity is available." : "Queued CPU batch ready: folders will run one at a time."} This will not run one combined molecule set.`
     : "Each selected folder will submit as a separate job.";
   $("#preview-run span").textContent = count
     ? `Submit ${count} batch job${count === 1 ? "" : "s"}`
