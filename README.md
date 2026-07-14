@@ -82,6 +82,9 @@ private `job_data/jobs/<job-id>/inputs/` directory. Generated SDFs, logs, and
 metadata are written to the matching `outputs/` and `logs/` directories. The
 browser does not pass arbitrary client filesystem paths into the container.
 Results are loaded from the selected completed job and can be downloaded as a ZIP.
+The browser copy goes to the user's normal Downloads folder. For completed
+backend jobs, ZIP export also writes a server-side archive under that job's
+`outputs/` directory and reports the exact path in the GUI.
 
 Batch folders have different execution semantics by target: local CPU batches
 become one job per folder in a single serial worker queue; OSC GPU batches submit

@@ -925,6 +925,15 @@ async function downloadAll() {
   const button = $("#download-all");
   button.disabled = true;
   button.textContent = "Packaging…";
+  let archiveNotice = "The archive will be saved by your browser to its Downloads folder.";
+  if (state.resultSource === "job" && state.selectedJob?.id) {
+    try {
+      const saved = await service.exportJob(state.selectedJob.id);
+      archiveNotice = `A server copy was saved to ${saved.path}. The browser copy will be saved to its Downloads folder.`;
+    } catch (error) {
+      archiveNotice = `Browser copy will be saved to Downloads. Server archive was not created: ${error.message}`;
+    }
+  }
   const zip = new window.JSZip();
   const structures = zip.folder("generated_structures");
   state.study.candidates.forEach((item) => structures.file(item.name, item.text));
@@ -937,6 +946,7 @@ async function downloadAll() {
   if (state.study.referenceSdf) zip.file(filenameOnly(state.study.example.sdf || "reference.sdf"), state.study.referenceSdf);
   const blob = await zip.generateAsync({ type: "blob" });
   downloadBlob(blob, `${studyName()}_study.zip`, "application/zip");
+  showToast(archiveNotice);
   button.disabled = false;
   button.innerHTML = "Download ZIP <b>↓</b>";
 }

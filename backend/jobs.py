@@ -11,6 +11,7 @@ import subprocess
 import threading
 import time
 import uuid
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -236,6 +237,21 @@ class LocalJobManager:
                 "output_directory": str(paths.outputs),
             },
         }
+
+    def export_job(self, job_id: str) -> dict:
+        paths = self._paths(job_id)
+        job = self._read_job(job_id)
+        if not job:
+            raise ValueError("Unknown job.")
+        if job.get("status") != "completed":
+            raise ValueError("Only completed jobs can be exported.")
+        archive = paths.outputs / f"{job_id}_study.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+            for path in sorted(paths.root.rglob("*")):
+                if not path.is_file() or path == archive:
+                    continue
+                bundle.write(path, path.relative_to(paths.root))
+        return {"path": str(archive), "relative_path": str(archive.relative_to(paths.root)), "size": archive.stat().st_size}
 
     def cancel(self, job_id: str) -> dict:
         job = self.get_job(job_id)

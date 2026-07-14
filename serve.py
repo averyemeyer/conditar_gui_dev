@@ -97,6 +97,8 @@ class StudioRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json(JOB_MANAGER.submit_batch(self._read_json()), 201)
             elif len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "cancel":
                 self._send_json({"job": JOB_MANAGER.cancel(parts[2])})
+            elif len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "export":
+                self._send_json(JOB_MANAGER.export_job(parts[2]))
             else:
                 self._send_json({"error": "Unknown API endpoint."}, 404)
         except ValueError as error:

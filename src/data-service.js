@@ -99,6 +99,10 @@ export class ExampleDataService {
       })),
     };
   }
+
+  async exportJob(jobId) {
+    return fetchJson(`/api/jobs/${jobId}/export`, { method: "POST" });
+  }
 }
 
 async function fetchText(path, required = true) {
