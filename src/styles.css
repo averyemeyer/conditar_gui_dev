@@ -22,16 +22,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .app-shell { min-height: 100vh; }
 .topbar { height: 78px; padding: 0 clamp(20px, 2.4vw, 48px); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .9); position: sticky; top: 0; z-index: 20; backdrop-filter: blur(16px); }
 .brand { display: flex; align-items: center; color: inherit; text-decoration: none; }
-.brand-logo { width: clamp(150px, 13vw, 210px); height: auto; display: block; }
+.brand-logo { width: clamp(170px, 14vw, 230px); max-height: 48px; height: auto; display: block; object-fit: contain; }
 .topbar-meta { display: flex; align-items: center; gap: 12px; }
 .icon-button { width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 50%; background: var(--paper); color: var(--ink); }
 main { width: 100%; max-width: none; margin: 0; }
 .hero { min-height: 278px; padding: 48px clamp(24px, 3vw, 56px) 34px; display: flex; justify-content: space-between; align-items: center; gap: 48px; background: radial-gradient(circle at 78% 28%, rgba(44, 139, 255, .16), transparent 32%), linear-gradient(130deg, #f8fbff 0%, #edf5ff 56%, #f7fbff 100%); border-bottom: 1px solid var(--line); overflow: hidden; }
 .eyebrow { margin: 0 0 12px; color: var(--accent); font: 500 13px "DM Mono"; letter-spacing: .12em; text-transform: uppercase; }
-h1 { margin: 0; max-width: 700px; font-size: clamp(38px, 4.5vw, 62px); line-height: 1.04; letter-spacing: -.035em; font-weight: 700; color: var(--accent-dark); }
+h1 { margin: 0; max-width: 700px; font-size: clamp(38px, 4.5vw, 62px); line-height: 1.04; letter-spacing: 0; font-weight: 700; color: var(--accent-dark); }
 .hero-copy { max-width: 660px; margin: 18px 0 0; color: var(--muted); font-size: 16px; line-height: 1.6; }
 .hero-brand-panel { flex: 0 0 clamp(300px, 32vw, 520px); display: grid; justify-items: center; gap: 14px; align-self: stretch; align-content: center; }
-.hero-mark { width: min(100%, 440px); height: auto; filter: drop-shadow(0 20px 28px rgba(7, 29, 91, .12)); }
+.hero-mark { width: min(100%, 390px); height: auto; }
 .study-status { flex: 0 0 auto; padding: 12px 17px; border: 1px solid rgba(7, 91, 255, .18); border-radius: 999px; background: rgba(255, 255, 255, .86); color: var(--muted); font-size: 13px; white-space: nowrap; box-shadow: 0 8px 28px rgba(7, 29, 91, .08); }
 .study-status i { width: 8px; height: 8px; display: inline-block; margin-right: 8px; border-radius: 50%; background: var(--success); }
 .study-status strong { color: var(--ink); }
@@ -41,7 +41,7 @@ h1 { margin: 0; max-width: 700px; font-size: clamp(38px, 4.5vw, 62px); line-heig
 .workspace-section { padding: 54px clamp(24px, 3vw, 56px); border-bottom: 1px solid var(--line); scroll-margin-top: 128px; }
 .workspace-section[hidden] { display: none; }
 .section-heading { display: flex; justify-content: space-between; align-items: end; margin-bottom: 34px; }
-.section-heading h2 { margin: 0; font-size: 30px; letter-spacing: -.035em; }
+.section-heading h2 { margin: 0; font-size: 30px; letter-spacing: 0; }
 .section-heading > p { max-width: 600px; margin: 0; color: var(--muted); font-size: 15px; line-height: 1.6; }
 .execution-bar { display: flex; align-items: center; gap: 16px; margin: 18px 0 0; padding: 13px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: #f8fbff; }
 .execution-bar > div:first-child { min-width: 230px; }
@@ -244,7 +244,7 @@ body.high-contrast { --bg: #eef4ff; --paper: #fff; --ink: #020b2c; --muted: #243
 @media (max-width: 680px) {
   main { width: 100%; }
   .topbar { padding: 0 18px; }
-  .brand-logo { width: 150px; }
+  .brand-logo { width: 165px; }
   .hero, .workspace-section { padding: 40px 20px; }
   .hero { min-height: 340px; }
   .hero-mark { width: min(82vw, 300px); }

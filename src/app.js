@@ -1,8 +1,8 @@
-import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-branding-1";
-import { drawHistogram } from "./charts.js?v=20260715-branding-1";
-import { ExampleDataService } from "./data-service.js?v=20260715-branding-1";
-import { vinaWasRun } from "./sdf.js?v=20260715-branding-1";
-import { render2D, render3D } from "./viewers.js?v=20260715-branding-1";
+import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-source-branding-1";
+import { drawHistogram } from "./charts.js?v=20260715-source-branding-1";
+import { ExampleDataService } from "./data-service.js?v=20260715-source-branding-1";
+import { vinaWasRun } from "./sdf.js?v=20260715-source-branding-1";
+import { render2D, render3D } from "./viewers.js?v=20260715-source-branding-1";
 
 const service = new ExampleDataService();
 const ACTIVE_JOB_STATUSES = new Set(["queued", "running"]);

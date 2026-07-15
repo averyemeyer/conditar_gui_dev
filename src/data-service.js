@@ -1,5 +1,5 @@
-import { EXAMPLES } from "./config.js?v=20260715-branding-1";
-import { candidateId, parseSdf } from "./sdf.js?v=20260715-branding-1";
+import { EXAMPLES } from "./config.js?v=20260715-source-branding-1";
+import { candidateId, parseSdf } from "./sdf.js?v=20260715-source-branding-1";
 
 export class ExampleDataService {
   async loadStudy(exampleId, onProgress = () => {}) {
