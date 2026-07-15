@@ -1,5 +1,5 @@
-import { EXAMPLES } from "./config.js?v=20260715-rdkit-vina";
-import { candidateId, parseSdf } from "./sdf.js?v=20260715-rdkit-vina";
+import { EXAMPLES } from "./config.js?v=20260715-docking-null-2";
+import { candidateId, parseSdf } from "./sdf.js?v=20260715-docking-null-2";
 
 export class ExampleDataService {
   async loadStudy(exampleId, onProgress = () => {}) {

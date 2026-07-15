@@ -1,8 +1,8 @@
-import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-rdkit-vina";
-import { drawHistogram } from "./charts.js?v=20260715-rdkit-vina";
-import { ExampleDataService } from "./data-service.js?v=20260715-rdkit-vina";
-import { vinaWasRun } from "./sdf.js?v=20260715-rdkit-vina";
-import { render2D, render3D } from "./viewers.js?v=20260715-rdkit-vina";
+import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-docking-null-2";
+import { drawHistogram } from "./charts.js?v=20260715-docking-null-2";
+import { ExampleDataService } from "./data-service.js?v=20260715-docking-null-2";
+import { vinaWasRun } from "./sdf.js?v=20260715-docking-null-2";
+import { render2D, render3D } from "./viewers.js?v=20260715-docking-null-2";
 
 const service = new ExampleDataService();
 const state = {
@@ -520,21 +520,22 @@ function renderSummary() {
     ["Mean heavy atoms", formatMetric(average("heavyAtoms"), 1), "atoms"],
     ["Ring-containing", candidates.filter((item) => item.rings > 0).length, "molecules"],
   ];
-  if (numericValues(candidates, "vinaScore").length) {
-    cards.push(["Mean docking score", formatMetric(average("vinaScore")), "kcal/mol"]);
+  const dockingValues = candidates.map(dockingMetric).filter(Number.isFinite);
+  if (dockingValues.length) {
+    cards.push(["Mean docking score", formatMetric(dockingValues.reduce((sum, value) => sum + value, 0) / dockingValues.length), "kcal/mol"]);
   }
   $("#metric-strip").innerHTML = cards.map(([label, value, unit]) => `<div class="metric-card"><span>${label}</span><strong>${value}</strong><small>${unit}</small></div>`).join("");
   renderQualitySummary(candidates);
 }
 
 function renderQualitySummary(candidates) {
-  const vinaValues = numericValues(candidates, "vinaScore");
+  const vinaValues = candidates.map(dockingMetric).filter(Number.isFinite);
   const qedValues = propertyValues(candidates, "QED");
   const saValues = propertyValues(candidates, "SA");
   const logpValues = propertyValues(candidates, "LOGP");
   const lipinskiValues = propertyValues(candidates, "LIPINSKI");
   const uniqueFormulas = new Set(candidates.map((item) => item.formula).filter(Boolean)).size;
-  const scored = candidates.filter((item) => item.properties?.VINA_STATUS === "ok" || item.vinaScore !== null).length;
+  const scored = candidates.filter((item) => dockingMetric(item) !== null).length;
   const lipinskiPasses = lipinskiValues.filter((value) => value >= 4).length;
   const bestVina = vinaValues.length ? Math.min(...vinaValues) : null;
   const rows = [
@@ -580,7 +581,7 @@ function renderResultsTable() {
       <td class="smiles-cell" title="${escapeHtml(item.smiles || item.properties?.SMILES || "")}">${escapeHtml(item.smiles || item.properties?.SMILES || "-")}</td>
       <td>${formatMetric(propertyMetric(item, "VINA_SCORE_ONLY"))}</td>
       <td>${formatMetric(propertyMetric(item, "VINA_MINIMIZE"))}</td>
-      <td>${formatMetric(propertyMetric(item, "VINA_DOCK") ?? propertyMetric(item, "QVINA") ?? item.vinaScore)}</td>
+      <td>${formatMetric(propertyMetric(item, "VINA_DOCK") ?? propertyMetric(item, "QVINA") ?? dockingMetric(item))}</td>
     </tr>`).join("");
   $$("#result-table .candidate-export-toggle").forEach((input) => input.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -601,6 +602,14 @@ function propertyMetric(item, key) {
   return Number.isFinite(value) ? value : null;
 }
 
+function dockingMetric(item) {
+  if (!vinaWasRun(item.properties)) return null;
+  const value = Number(item.vinaScore);
+  // Older outputs without VINA_STATUS used 0.0 as a placeholder.
+  if (!item.properties?.VINA_STATUS && value === 0) return null;
+  return Number.isFinite(value) ? value : null;
+}
+
 function candidateMetric(item, key) {
   if (key === "vina_score_only") return propertyMetric(item, "VINA_SCORE_ONLY");
   if (key === "vina_minimize") return propertyMetric(item, "VINA_MINIMIZE");
@@ -613,7 +622,9 @@ function renderCharts() {
   if (!state.study || state.activeTab !== "results" || !$(".analytics-details").open) return;
   const metric = $("#histogram-metric").value;
   const label = $("#histogram-metric").selectedOptions[0].textContent;
-  const values = numericValues(state.study.candidates, metric);
+  const values = metric === "vinaScore"
+    ? state.study.candidates.map(dockingMetric).filter(Number.isFinite)
+    : numericValues(state.study.candidates, metric);
   const slider = $("#histogram-threshold");
   if (!values.length) {
     slider.disabled = true;
@@ -664,8 +675,9 @@ function renderSelectedStructure() {
   if (molecule.smiles) {
     metrics.push(["SMILES", molecule.smiles]);
   }
-  if (molecule.vinaScore !== null) {
-    metrics.push(["Docking", formatMetric(molecule.vinaScore)]);
+  const dockingScore = dockingMetric(molecule);
+  if (dockingScore !== null) {
+    metrics.push(["Docking", formatMetric(dockingScore)]);
   }
   if (vinaWasRun(molecule.properties) && molecule.properties?.VINA_SCORE_ONLY && molecule.vinaScore === null) {
     metrics.push(["Vina score", formatMetric(Number.parseFloat(molecule.properties.VINA_SCORE_ONLY))]);
