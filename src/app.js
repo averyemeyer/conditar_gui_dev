@@ -1,8 +1,8 @@
-import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-rerun-2";
-import { drawHistogram } from "./charts.js?v=20260715-rerun-2";
-import { ExampleDataService } from "./data-service.js?v=20260715-rerun-2";
-import { vinaWasRun } from "./sdf.js?v=20260715-rerun-2";
-import { render2D, render3D } from "./viewers.js?v=20260715-rerun-2";
+import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-osc-status-1";
+import { drawHistogram } from "./charts.js?v=20260715-osc-status-1";
+import { ExampleDataService } from "./data-service.js?v=20260715-osc-status-1";
+import { vinaWasRun } from "./sdf.js?v=20260715-osc-status-1";
+import { render2D, render3D } from "./viewers.js?v=20260715-osc-status-1";
 
 const service = new ExampleDataService();
 const state = {
@@ -593,6 +593,7 @@ function combineLogs(logs = {}) {
   const sections = [];
   if (logs.stdout) sections.push(`STDOUT\n${logs.stdout}`);
   if (logs.stderr) sections.push(`STDERR\n${logs.stderr}`);
+  if (logs.extra) sections.push(`ADDITIONAL LOGS\n${logs.extra}`);
   return sections.join("\n\n");
 }
 

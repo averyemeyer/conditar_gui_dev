@@ -226,14 +226,17 @@ class LocalJobManager:
 
     def logs(self, job_id: str) -> dict:
         paths = self._paths(job_id)
+        job = self._read_job(job_id) or {}
+        extra_logs = self._extra_log_text(paths, job)
         return {
             "stdout": paths.stdout.read_text(errors="replace") if paths.stdout.exists() else "",
             "stderr": paths.stderr.read_text(errors="replace") if paths.stderr.exists() else "",
+            "extra": extra_logs,
         }
 
     def results(self, job_id: str) -> dict:
         paths = self._paths(job_id)
-        job = self._read_job(job_id) or {}
+        job = self._refresh_job(self._read_job(job_id)) or {}
         inputs = {}
         for key in ("pdb", "sdf"):
             relative = (job.get("inputs") or {}).get(key)
@@ -759,6 +762,7 @@ class LocalJobManager:
             return job
 
         exit_code_path = paths.logs / "exit_code.txt"
+        output_sdfs = self._output_sdfs(paths)
         if exit_code_path.exists():
             try:
                 exit_code = int(exit_code_path.read_text().strip())
@@ -777,16 +781,24 @@ class LocalJobManager:
             return job
 
         state = self._slurm_state(job)
+        if output_sdfs and (not state or state in SLURM_SUCCESS_STATES):
+            self._mark_completed_from_outputs(paths, job, output_sdfs)
+            return job
+
         if state:
             job["status_note"] = None
             job.setdefault("slurm", {})["state"] = state
             if state in SLURM_PENDING_STATES:
                 job["status"] = "queued"
             elif state in SLURM_RUNNING_STATES:
-                job["status"] = "running"
-                job["started_at"] = job.get("started_at") or utc_now()
+                if output_sdfs:
+                    self._mark_completed_from_outputs(paths, job, output_sdfs)
+                    return job
+                else:
+                    job["status"] = "running"
+                    job["started_at"] = job.get("started_at") or utc_now()
             elif state in SLURM_SUCCESS_STATES:
-                job["status"] = "completed" if list(paths.outputs.rglob("*.sdf")) else "failed"
+                job["status"] = "completed" if output_sdfs else "failed"
                 job["finished_at"] = job.get("finished_at") or utc_now()
                 job["exit_code"] = 0 if job["status"] == "completed" else 1
                 if job["status"] == "failed":
@@ -805,7 +817,9 @@ class LocalJobManager:
                 self._send_email(job, paths)
             self._write_job(paths, job)
         elif job.get("target") == "osc_gpu":
-            if any(path.exists() and path.stat().st_size > 0 for path in (paths.stdout, paths.stderr)):
+            if output_sdfs:
+                self._mark_completed_from_outputs(paths, job, output_sdfs)
+            elif self._job_has_logs(paths, job):
                 if job.get("status") == "queued":
                     job["status"] = "running"
                     job["started_at"] = job.get("started_at") or utc_now()
@@ -820,6 +834,63 @@ class LocalJobManager:
                 )
             self._write_job(paths, job)
         return job
+
+    def _output_sdfs(self, paths: JobPaths) -> list[Path]:
+        if not paths.outputs.exists():
+            return []
+        return sorted(paths.outputs.rglob("*.sdf"))
+
+    def _mark_completed_from_outputs(self, paths: JobPaths, job: dict, output_sdfs: list[Path] | None = None) -> None:
+        output_sdfs = output_sdfs if output_sdfs is not None else self._output_sdfs(paths)
+        job["status"] = "completed"
+        job["finished_at"] = job.get("finished_at") or utc_now()
+        job["exit_code"] = 0
+        job["error_message"] = None
+        job["output_count"] = len(output_sdfs)
+        job["status_note"] = (
+            f"Marked completed after finding {len(output_sdfs)} SDF output"
+            f"{'' if len(output_sdfs) == 1 else 's'} in the job output directory."
+        )
+        self._write_job(paths, job)
+        self._send_email(job, paths)
+
+    def _job_has_logs(self, paths: JobPaths, job: dict) -> bool:
+        if any(path.exists() and path.stat().st_size > 0 for path in (paths.stdout, paths.stderr)):
+            return True
+        return bool(self._related_log_files(paths, job))
+
+    def _extra_log_text(self, paths: JobPaths, job: dict) -> str:
+        sections = []
+        for path in self._related_log_files(paths, job):
+            try:
+                text = path.read_text(errors="replace")
+            except OSError:
+                continue
+            if not text.strip():
+                continue
+            sections.append(f"{path.name}\n{text}")
+        return "\n\n".join(sections)
+
+    def _related_log_files(self, paths: JobPaths, job: dict) -> list[Path]:
+        candidates: set[Path] = set()
+        for directory in (paths.logs, paths.root):
+            if directory.exists():
+                for pattern in ("*.log", "*.out", "*.err", "exit_code.txt"):
+                    candidates.update(path for path in directory.glob(pattern) if path.is_file())
+
+        slurm = job.get("slurm") or {}
+        array_id = slurm.get("array_job_id")
+        job_id = slurm.get("job_id")
+        if array_id:
+            task_id = str(job_id).split("_", 1)[1] if "_" in str(job_id) else "*"
+            for pattern in (f"slurm-{array_id}_{task_id}.out", f"slurm-{array_id}_{task_id}.err"):
+                candidates.update(path for path in self.project_root.glob(pattern) if path.is_file())
+        elif job_id:
+            for pattern in (f"slurm-{job_id}.out", f"slurm-{job_id}.err"):
+                candidates.update(path for path in self.project_root.glob(pattern) if path.is_file())
+
+        ignored = {paths.stdout, paths.stderr}
+        return sorted(path for path in candidates if path not in ignored)
 
     def _slurm_state(self, job: dict) -> str | None:
         slurm_job_id = (job.get("slurm") or {}).get("job_id")
