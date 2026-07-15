@@ -1,5 +1,5 @@
-import { EXAMPLES } from "./config.js?v=20260715-osc-status-2";
-import { candidateId, parseSdf } from "./sdf.js?v=20260715-osc-status-2";
+import { EXAMPLES } from "./config.js?v=20260715-robustness-1";
+import { candidateId, parseSdf } from "./sdf.js?v=20260715-robustness-1";
 
 export class ExampleDataService {
   async loadStudy(exampleId, onProgress = () => {}) {
@@ -81,6 +81,10 @@ export class ExampleDataService {
 
   async getJobLogs(jobId) {
     return fetchJson(`/api/jobs/${jobId}/logs`);
+  }
+
+  async cancelJob(jobId) {
+    return fetchJson(`/api/jobs/${jobId}/cancel`, { method: "POST" });
   }
 
   async loadJobResults(job) {

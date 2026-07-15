@@ -1,10 +1,14 @@
-import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-osc-status-2";
-import { drawHistogram } from "./charts.js?v=20260715-osc-status-2";
-import { ExampleDataService } from "./data-service.js?v=20260715-osc-status-2";
-import { vinaWasRun } from "./sdf.js?v=20260715-osc-status-2";
-import { render2D, render3D } from "./viewers.js?v=20260715-osc-status-2";
+import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-robustness-1";
+import { drawHistogram } from "./charts.js?v=20260715-robustness-1";
+import { ExampleDataService } from "./data-service.js?v=20260715-robustness-1";
+import { vinaWasRun } from "./sdf.js?v=20260715-robustness-1";
+import { render2D, render3D } from "./viewers.js?v=20260715-robustness-1";
 
 const service = new ExampleDataService();
+const ACTIVE_JOB_STATUSES = new Set(["queued", "running"]);
+const TERMINAL_JOB_STATUSES = new Set(["completed", "failed", "canceled"]);
+const CLEANUP_JOB_STATUSES = new Set(["failed", "canceled"]);
+
 const state = {
   study: null,
   selected: null,
@@ -20,6 +24,7 @@ const state = {
   jobs: [],
   jobFilter: "all",
   jobPollTimer: null,
+  jobsRefreshTimer: null,
   activeTab: "setup",
   resultSource: "upload",
   runtimeHealth: null,
@@ -270,7 +275,7 @@ async function submitGenerationJob() {
     await prepareLocalNotifications(payload);
     const response = state.batchInputs.length ? await service.submitBatch(payload) : { jobs: [await service.submitJob(payload)], errors: [] };
     response.jobs.forEach((item) => {
-      if (item.target === "local_cpu" && !["failed", "canceled"].includes(item.status)) state.watchedJobs.add(item.id);
+      if (item.target === "local_cpu" && !isTerminalJob(item)) state.watchedJobs.add(item.id);
     });
     const job = response.jobs[0];
     state.currentJob = job;
@@ -288,6 +293,7 @@ async function submitGenerationJob() {
     setActiveTab("jobs");
     showToast(failedJobs.length ? message : response.jobs.length > 1 ? message : `${targetLabel(job)} job queued.`);
     if (response.errors.length) console.warn("Batch submission errors", response.errors);
+    scheduleJobsRefresh();
     if (job.status !== "failed") pollJob(job.id);
   } catch (error) {
     showToast(error.message);
@@ -370,7 +376,7 @@ async function pollJob(jobId) {
       await loadCompletedJob(job);
       return;
     }
-    if (job.status === "failed" || job.status === "canceled") {
+    if (CLEANUP_JOB_STATUSES.has(job.status)) {
       notifyJobTerminal(job, job.status);
       showToast(job.error_message || `Job ${job.status}.`);
       return;
@@ -441,7 +447,7 @@ function updateJobDetail(job, logText, logs = null) {
   const error = job?.error_message ? `Error: ${job.error_message}\n\n` : "";
   const fallback = job ? jobPaths(job) : null;
   const pathText = fallback ? `Paths:\nstdout: ${fallback.stdout}\nstderr: ${fallback.stderr}\noutputs: ${fallback.outputs}\n\n` : "";
-  const renderedLog = logText || (logs && (logs.stdout || logs.stderr) ? combineLogs(logs) : "");
+  const renderedLog = logText || (logs && (logs.stdout || logs.stderr || logs.extra) ? combineLogs(logs) : "");
   $("#job-detail-log").textContent = trimLog(note + error + pathText + (renderedLog || "Select a job to view logs."));
   renderJobAlert(job, fallback);
 }
@@ -451,17 +457,24 @@ async function refreshJobs(showMessage = false) {
     state.jobs = await service.listJobs();
     notifyWatchedTerminalJobs(state.jobs);
     renderJobsTable();
+    scheduleJobsRefresh();
     if (showMessage) showToast(`Loaded ${state.jobs.length} job${state.jobs.length === 1 ? "" : "s"}.`);
   } catch (error) {
     if (showMessage) showToast(error.message);
   }
 }
 
+function scheduleJobsRefresh() {
+  clearTimeout(state.jobsRefreshTimer);
+  if (!state.jobs.some(isActiveJob)) return;
+  state.jobsRefreshTimer = setTimeout(() => refreshJobs(false), 7000);
+}
+
 function renderJobsTable() {
   const jobs = [...state.jobs]
     .filter((job) => {
       if (state.jobFilter === "all") return true;
-      if (state.jobFilter === "active") return ["queued", "running"].includes(job.status);
+      if (state.jobFilter === "active") return isActiveJob(job);
       return job.status === state.jobFilter;
     })
     .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
@@ -473,9 +486,9 @@ function renderJobsTable() {
       <td>${formatDate(job.created_at)}<br><small>${escapeHtml(slurmLabel(job))}</small></td>
       <td>
         ${job.status === "completed" ? `<button class="secondary-button compact-action load-job-results">Results</button>` : ""}
-        ${["queued", "running"].includes(job.status) ? `<button class="secondary-button compact-action cancel-job">Cancel</button>` : ""}
-        ${["failed", "canceled"].includes(job.status) ? `<button class="secondary-button compact-action rerun-job">Rerun</button>` : ""}
-        ${["failed", "canceled"].includes(job.status) ? `<button class="secondary-button compact-action danger-action cleanup-job">Clean up</button>` : ""}
+        ${isActiveJob(job) ? `<button class="secondary-button compact-action cancel-job">Cancel</button>` : ""}
+        ${CLEANUP_JOB_STATUSES.has(job.status) ? `<button class="secondary-button compact-action rerun-job">Rerun</button>` : ""}
+        ${CLEANUP_JOB_STATUSES.has(job.status) ? `<button class="secondary-button compact-action danger-action cleanup-job">Clean up</button>` : ""}
       </td>
     </tr>`).join("") : `<tr><td colspan="5">No jobs yet.</td></tr>`;
 
@@ -506,9 +519,7 @@ function renderJobsTable() {
 
 async function cancelJob(jobId) {
   try {
-    const response = await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error || "Cancel failed.");
+    const body = await service.cancelJob(jobId);
     state.selectedJob = body.job;
     await refreshJobs(false);
     updateJobDetail(body.job, "Cancel requested.");
@@ -549,7 +560,8 @@ async function rerunJob(jobId) {
     updateJobPanel(job, "Rerun queued.");
     updateJobDetail(job, `Rerun created from ${jobId}.`);
     showToast(`Rerun queued as ${shortJobId(job.id)}.`);
-    if (!["failed", "canceled", "completed"].includes(job.status)) pollJob(job.id);
+    scheduleJobsRefresh();
+    if (!isTerminalJob(job)) pollJob(job.id);
   } catch (error) {
     showToast(error.message);
   }
@@ -906,6 +918,14 @@ function targetLabel(job) {
   return job.target || "Local CPU";
 }
 
+function isActiveJob(job) {
+  return ACTIVE_JOB_STATUSES.has(job?.status);
+}
+
+function isTerminalJob(job) {
+  return TERMINAL_JOB_STATUSES.has(job?.status);
+}
+
 function shortJobId(jobId) {
   const text = String(jobId || "");
   return text.length > 22 ? `${text.slice(0, 15)}…${text.slice(-6)}` : text;
@@ -1216,6 +1236,7 @@ async function downloadAll() {
   zip.file("run_config.json", JSON.stringify(buildConfiguration(), null, 2));
   if (state.study.logs?.stdout) zip.file("logs/stdout.log", state.study.logs.stdout);
   if (state.study.logs?.stderr) zip.file("logs/stderr.log", state.study.logs.stderr);
+  if (state.study.logs?.extra) zip.file("logs/additional_logs.txt", state.study.logs.extra);
   if (state.study.summary) zip.file("job_summary.json", JSON.stringify(state.study.summary, null, 2));
   if (state.study.pdbText) zip.file(filenameOnly(state.study.example.pdb || "input.pdb"), state.study.pdbText);
   if (state.study.referenceSdf) zip.file(filenameOnly(state.study.example.sdf || "reference.sdf"), state.study.referenceSdf);
