@@ -21,7 +21,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .app-shell { min-height: 100vh; }
 .topbar { height: 74px; padding: 0 max(28px, calc((100vw - 1440px) / 2)); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: rgba(251, 252, 251, .92); position: sticky; top: 0; z-index: 20; backdrop-filter: blur(16px); }
 .brand { display: flex; align-items: center; color: inherit; text-decoration: none; }
-.brand-logo { display: block; width: clamp(170px, 18vw, 255px); height: 52px; object-fit: contain; object-position: left center; mix-blend-mode: multiply; }
+.brand-placeholder { display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border: 1px dashed #aebbb7; border-radius: 7px; color: var(--muted); background: #f8faf9; font: 500 11px "DM Mono", monospace; letter-spacing: .08em; text-transform: uppercase; }
 .topbar-meta { display: flex; align-items: center; gap: 12px; }
 .icon-button { width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 50%; background: var(--paper); color: var(--ink); }
 main { max-width: 1240px; margin: auto; }
@@ -232,7 +232,7 @@ body.high-contrast { --bg: #edf1ef; --paper: #fff; --ink: #07110f; --muted: #455
 }
 @media (max-width: 680px) {
   .topbar { padding: 0 18px; }
-  .brand-logo { width: 172px; height: 46px; }
+  .brand-placeholder { max-width: 190px; }
   .hero, .workspace-section { padding: 40px 20px; }
   .hero { min-height: 300px; }
   .workflow-nav { padding: 0 8px; overflow-x: auto; }
