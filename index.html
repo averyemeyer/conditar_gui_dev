@@ -14,7 +14,7 @@
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="#" aria-label="conDitar home">
-        <span class="brand-placeholder">conDitar logo here</span>
+        <img class="brand-logo" src="./media/branding/conditar-logo-horizontal.svg" alt="conDitar">
       </a>
       <div class="topbar-meta">
         <button class="icon-button" id="theme-toggle" aria-label="Toggle contrast">◐</button>
@@ -28,10 +28,13 @@
           <h1>Generate and explore molecules.</h1>
           <p class="hero-copy">Add a protein structure, choose a few settings, and review generated candidates in 3D.</p>
         </div>
-        <div class="study-status" aria-label="Loaded study summary">
-          <i></i><strong id="hero-candidate-count">0</strong> candidates ·
-          <span id="hero-input-mode">No input</span> ·
-          <span id="hero-status">Ready</span>
+        <div class="hero-brand-panel">
+          <img class="hero-mark" src="./media/branding/conditar-mark.svg" alt="" aria-hidden="true">
+          <div class="study-status" aria-label="Loaded study summary">
+            <i></i><strong id="hero-candidate-count">0</strong> candidates ·
+            <span id="hero-input-mode">No input</span> ·
+            <span id="hero-status">Ready</span>
+          </div>
         </div>
       </section>
 
@@ -353,6 +356,6 @@
   <script async src="https://cdn.jsdelivr.net/npm/3dmol@2.4.2/build/3Dmol-min.js"></script>
   <script async src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script defer src="https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js"></script>
-  <script type="module" src="./src/app.js?v=20260715-final-tidy-1"></script>
+  <script type="module" src="./src/app.js?v=20260715-branding-1"></script>
 </body>
 </html>
