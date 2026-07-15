@@ -66,7 +66,10 @@ export function parseSdf(text, name = "molecule.sdf") {
 // indicates that Vina metrics should be treated as missing.
 export function vinaWasRun(properties = {}) {
   const status = String(properties.VINA_STATUS || "").trim().toLowerCase();
-  return !["not_run", "not run", "not_requested", "not requested", "skipped", "disabled", "none", "off", "false"].includes(status);
+  if (status) return status === "ok";
+  const mode = String(properties.VINA_MODE || "").trim().toLowerCase();
+  if (["none", "off", "disabled", "not_run", "not requested"].includes(mode)) return false;
+  return true;
 }
 
 function parseProperties(lines) {

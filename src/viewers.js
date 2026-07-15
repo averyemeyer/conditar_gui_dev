@@ -36,117 +36,26 @@ export function render3D(container, molecule, receptorText, options = {}) {
 export function render2D(container, molecule) {
   const width = 720;
   const height = 480;
-  const layout = layoutMolecule(molecule, width, height);
-  const bonds = layout.bonds.map((bond) => bondSvg(layout.points[bond.a], layout.points[bond.b], bond.order)).join("");
-  const atoms = molecule.atoms.map((atom, index) => {
-    const point = layout.points[index];
-    if (!point) return "";
-    if (atom.element === "C" || atom.element === "H") return "";
-    return `<g><circle cx="${point.x}" cy="${point.y}" r="13" fill="#f7f9f8"/><text x="${point.x}" y="${point.y + 5}" text-anchor="middle" fill="${ELEMENT_COLORS[atom.element] || "#263632"}">${atom.element}</text></g>`;
-  }).join("");
-  container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="2D structure of ${molecule.id}"><rect width="${width}" height="${height}" fill="#f7f9f8"/>${bonds}${atoms}</svg>`;
-}
-
-function layoutMolecule(molecule, width, height) {
-  const visible = molecule.atoms
-    .map((atom, index) => ({ atom, index }))
-    .filter(({ atom }) => atom.element !== "H");
-  const visibleSet = new Set(visible.map(({ index }) => index));
-  const bonds = molecule.bonds.filter((bond) => visibleSet.has(bond.a) && visibleSet.has(bond.b));
-  if (!visible.length) return { points: [], bonds: [] };
-
-  const points = Array.from({ length: molecule.atoms.length }, () => null);
-  const center = { x: width / 2, y: height / 2 };
-  const coordinateSpan = (axis) => {
-    const values = visible.map(({ atom }) => atom[axis]).filter(Number.isFinite);
-    return values.length ? Math.max(...values) - Math.min(...values) : 0;
-  };
-  const hasCoordinates = coordinateSpan("x") > 0.01 || coordinateSpan("y") > 0.01;
-  if (hasCoordinates) {
-    // SDF files already contain a 2D/3D conformer. Project its x/y plane so
-    // the displayed topology follows the source instead of a random circle.
-    visible.forEach(({ atom, index }) => {
-      points[index] = { x: center.x + atom.x, y: center.y - atom.y, vx: 0, vy: 0 };
-    });
-    fitPoints(points, visible.map(({ index }) => index), width, height);
-    return { points, bonds };
-  }
-  const radius = Math.min(width, height) * 0.28;
-  visible.forEach(({ index }, order) => {
-    const angle = (Math.PI * 2 * order) / visible.length - Math.PI / 2;
-    points[index] = {
-      x: center.x + Math.cos(angle) * radius,
-      y: center.y + Math.sin(angle) * radius,
-      vx: 0,
-      vy: 0,
-    };
-  });
-
-  const ideal = 52;
-  for (let iteration = 0; iteration < 360; iteration += 1) {
-    visible.forEach(({ index }, i) => {
-      const point = points[index];
-      for (let j = i + 1; j < visible.length; j += 1) {
-        const other = points[visible[j].index];
-        const dx = point.x - other.x;
-        const dy = point.y - other.y;
-        const dist2 = Math.max(dx * dx + dy * dy, 25);
-        const force = 950 / dist2;
-        const dist = Math.sqrt(dist2);
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        point.vx += fx;
-        point.vy += fy;
-        other.vx -= fx;
-        other.vy -= fy;
-      }
-    });
-
-    bonds.forEach((bond) => {
-      const a = points[bond.a];
-      const b = points[bond.b];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      const force = (dist - ideal) * 0.035;
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
-      a.vx += fx;
-      a.vy += fy;
-      b.vx -= fx;
-      b.vy -= fy;
-    });
-
-    visible.forEach(({ index }) => {
-      const point = points[index];
-      point.vx += (center.x - point.x) * 0.004;
-      point.vy += (center.y - point.y) * 0.004;
-      point.x += point.vx;
-      point.y += point.vy;
-      point.vx *= 0.72;
-      point.vy *= 0.72;
-    });
-  }
-
-  fitPoints(points, visible.map(({ index }) => index), width, height);
-  return { points, bonds };
-}
-
-function fitPoints(points, indices, width, height) {
-  const pad = 54;
-  const xs = indices.map((index) => points[index].x);
-  const ys = indices.map((index) => points[index].y);
+  const pad = 45;
+  const xs = molecule.atoms.map((atom) => atom.x);
+  const ys = molecule.atoms.map((atom) => atom.y);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
-  const scale = Math.min((width - pad * 2) / (maxX - minX || 1), (height - pad * 2) / (maxY - minY || 1), 2.2);
-  const offsetX = (width - (maxX - minX) * scale) / 2;
-  const offsetY = (height - (maxY - minY) * scale) / 2;
-  indices.forEach((index) => {
-    points[index].x = offsetX + (points[index].x - minX) * scale;
-    points[index].y = offsetY + (points[index].y - minY) * scale;
+  const scale = Math.min((width - pad * 2) / (maxX - minX || 1), (height - pad * 2) / (maxY - minY || 1));
+  const project = (atom) => ({
+    x: pad + (atom.x - minX) * scale + (width - pad * 2 - (maxX - minX) * scale) / 2,
+    y: height - pad - (atom.y - minY) * scale - (height - pad * 2 - (maxY - minY) * scale) / 2,
   });
+  const coords = molecule.atoms.map(project);
+  const bonds = molecule.bonds.map((bond) => bondSvg(coords[bond.a], coords[bond.b], bond.order)).join("");
+  const atoms = molecule.atoms.map((atom, index) => {
+    const point = coords[index];
+    if (atom.element === "C" || atom.element === "H") return "";
+    return `<g><circle cx="${point.x}" cy="${point.y}" r="12" fill="#f7f9f8"/><text x="${point.x}" y="${point.y + 5}" text-anchor="middle" fill="${ELEMENT_COLORS[atom.element] || "#263632"}">${atom.element}</text></g>`;
+  }).join("");
+  container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="2D structure of ${molecule.id}"><rect width="${width}" height="${height}" fill="#f7f9f8"/>${bonds}${atoms}</svg>`;
 }
 
 function bondSvg(a, b, order) {
