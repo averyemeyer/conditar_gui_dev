@@ -951,14 +951,20 @@ async function readValidatedTextFile(file, kind, showError = true) {
 
 function updateBatchLabel() {
   const count = state.batchInputs.length;
+  const target = resolvedTarget();
+  const isOsc = target === "osc_gpu";
+  const cpuBatchWarning = count > 10
+    ? "Large local CPU batches can take many hours. Keep this server window open, or use OSC GPU/Slurm for durable parallel queueing."
+    : "Local CPU batches run one at a time. Keep this server window open until the queued jobs finish.";
   $("#folder-name").textContent = count ? `${count} batch folder${count === 1 ? "" : "s"}` : "Batch folders";
   $("#folder-detail").textContent = count
-    ? `Generate will submit ${count} ${resolvedTarget() === "osc_gpu" ? "independent Slurm" : "serial queued CPU"} job${count === 1 ? "" : "s"}`
+    ? `Generate will submit ${count} ${isOsc ? "independent Slurm" : "serial queued CPU"} job${count === 1 ? "" : "s"}`
     : "Optional: one PDB and optional SDF per folder";
   $("#batch-mode-banner").hidden = !count;
-  $("#batch-mode-title").textContent = resolvedTarget() === "osc_gpu" ? "Parallel GPU batch" : "Queued CPU batch";
+  $("#batch-mode-banner").classList.toggle("is-warning", Boolean(count && !isOsc));
+  $("#batch-mode-title").textContent = isOsc ? "Parallel GPU batch" : "Queued CPU batch";
   $("#batch-mode-message").textContent = count
-    ? `${count} folder${count === 1 ? "" : "s"} ready. ${resolvedTarget() === "osc_gpu" ? "Parallel GPU batch ready: Slurm will process the folders concurrently when capacity is available." : "Queued CPU batch ready: folders will run one at a time."} Each folder is processed as its own job; inputs are never mixed.`
+    ? `${count} folder${count === 1 ? "" : "s"} ready. ${isOsc ? "Slurm will process folders concurrently when capacity is available." : cpuBatchWarning} Each folder is processed as its own job; inputs are never mixed.`
     : "Each selected folder will submit as a separate job.";
   $("#preview-run span").textContent = count
     ? `Submit ${count} batch job${count === 1 ? "" : "s"}`

@@ -89,6 +89,7 @@ select, input[type="text"], input[type="number"], input[type="search"] { border:
 .run-bar code { display: block; color: #d7e2de; font: 10px "DM Mono"; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .batch-mode-banner { display: flex; gap: 8px; align-items: baseline; margin-top: 10px; padding: 11px 14px; border: 1px solid #d8b36a; border-radius: 8px; color: #674b16; background: #fff8e8; font-size: 12px; }
 .batch-mode-banner[hidden] { display: none; }
+.batch-mode-banner.is-warning { border-color: #c98f4c; background: #fff4dc; color: #5b3d12; }
 .batch-mode-banner strong { text-transform: uppercase; letter-spacing: .06em; font: 500 10px "DM Mono", monospace; }
 .primary-button, .secondary-button { min-height: 44px; padding: 0 18px; border-radius: 7px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .primary-button { border: 1px solid #65a894; background: var(--accent); color: white; }

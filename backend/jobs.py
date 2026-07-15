@@ -768,10 +768,16 @@ class LocalJobManager:
             if job["status"] not in TERMINAL_STATES:
                 if job.get("target") == "osc_gpu":
                     continue
+                if job.get("status") == "queued" and not job.get("started_at"):
+                    job["error_message"] = None
+                    job["status_note"] = "Recovered queued local CPU job after server restart."
+                    self._write_job(self._paths(job["id"]), job)
+                    self._queue.put(job["id"])
+                    continue
                 job["status"] = "failed"
                 job["finished_at"] = utc_now()
                 job["error_message"] = (
-                    "Server restarted before this job completed. See logs: "
+                    "Server restarted while this local CPU job was running. See logs: "
                     f"{self._paths(job['id']).stderr} and {self._paths(job['id']).stdout}."
                 )
                 self._write_job(self._paths(job["id"]), job)
