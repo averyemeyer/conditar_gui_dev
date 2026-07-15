@@ -40,7 +40,9 @@ export function parseSdf(text, name = "molecule.sdf") {
   const components = connectedComponents(atoms.length, bonds);
   const rings = Math.max(0, bonds.length - atoms.length + components);
   const properties = parseProperties(lines);
-  const vinaScore = firstNumericProperty(properties, ["VINA_SCORE_ONLY", "VINA_MINIMIZE", "VINA_DOCK", "QVINA"]);
+  const vinaScore = vinaWasRun(properties)
+    ? firstNumericProperty(properties, ["VINA_SCORE_ONLY", "VINA_MINIMIZE", "VINA_DOCK", "QVINA"])
+    : null;
   const smiles = properties.SMILES || "";
 
   return {
@@ -58,6 +60,13 @@ export function parseSdf(text, name = "molecule.sdf") {
     rings,
     formula: formulaFromCounts(elementCounts),
   };
+}
+
+// Zero is a valid docking score; only an explicit skipped/not-run status
+// indicates that Vina metrics should be treated as missing.
+export function vinaWasRun(properties = {}) {
+  const status = String(properties.VINA_STATUS || "").trim().toLowerCase();
+  return !["not_run", "not run", "not_requested", "not requested", "skipped", "disabled", "none", "off", "false"].includes(status);
 }
 
 function parseProperties(lines) {

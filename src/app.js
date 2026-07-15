@@ -1,6 +1,7 @@
 import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260710-qvina-modes";
 import { drawHistogram } from "./charts.js?v=20260710-qvina-modes";
 import { ExampleDataService } from "./data-service.js?v=20260710-qvina-modes";
+import { vinaWasRun } from "./sdf.js?v=20260710-qvina-modes";
 import { render2D, render3D } from "./viewers.js?v=20260710-qvina-modes";
 
 const service = new ExampleDataService();
@@ -595,6 +596,7 @@ function renderResultsTable() {
 }
 
 function propertyMetric(item, key) {
+  if (["VINA_SCORE_ONLY", "VINA_MINIMIZE", "VINA_DOCK", "QVINA"].includes(key) && !vinaWasRun(item.properties)) return null;
   const value = Number.parseFloat(item.properties?.[key]);
   return Number.isFinite(value) ? value : null;
 }
@@ -665,16 +667,16 @@ function renderSelectedStructure() {
   if (molecule.vinaScore !== null) {
     metrics.push(["Docking", formatMetric(molecule.vinaScore)]);
   }
-  if (molecule.properties?.VINA_SCORE_ONLY && molecule.vinaScore === null) {
+  if (vinaWasRun(molecule.properties) && molecule.properties?.VINA_SCORE_ONLY && molecule.vinaScore === null) {
     metrics.push(["Vina score", formatMetric(Number.parseFloat(molecule.properties.VINA_SCORE_ONLY))]);
   }
-  if (molecule.properties?.VINA_MINIMIZE) {
+  if (vinaWasRun(molecule.properties) && molecule.properties?.VINA_MINIMIZE) {
     metrics.push(["Vina min", formatMetric(Number.parseFloat(molecule.properties.VINA_MINIMIZE))]);
   }
-  if (molecule.properties?.VINA_DOCK) {
+  if (vinaWasRun(molecule.properties) && molecule.properties?.VINA_DOCK) {
     metrics.push(["Vina dock", formatMetric(Number.parseFloat(molecule.properties.VINA_DOCK))]);
   }
-  if (molecule.properties?.QVINA) {
+  if (vinaWasRun(molecule.properties) && molecule.properties?.QVINA) {
     metrics.push(["QVina", formatMetric(Number.parseFloat(molecule.properties.QVINA))]);
   }
   $("#selected-metrics").innerHTML = metrics.map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join("");

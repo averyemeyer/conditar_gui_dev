@@ -57,6 +57,20 @@ function layoutMolecule(molecule, width, height) {
 
   const points = Array.from({ length: molecule.atoms.length }, () => null);
   const center = { x: width / 2, y: height / 2 };
+  const coordinateSpan = (axis) => {
+    const values = visible.map(({ atom }) => atom[axis]).filter(Number.isFinite);
+    return values.length ? Math.max(...values) - Math.min(...values) : 0;
+  };
+  const hasCoordinates = coordinateSpan("x") > 0.01 || coordinateSpan("y") > 0.01;
+  if (hasCoordinates) {
+    // SDF files already contain a 2D/3D conformer. Project its x/y plane so
+    // the displayed topology follows the source instead of a random circle.
+    visible.forEach(({ atom, index }) => {
+      points[index] = { x: center.x + atom.x, y: center.y - atom.y, vx: 0, vy: 0 };
+    });
+    fitPoints(points, visible.map(({ index }) => index), width, height);
+    return { points, bonds };
+  }
   const radius = Math.min(width, height) * 0.28;
   visible.forEach(({ index }, order) => {
     const angle = (Math.PI * 2 * order) / visible.length - Math.PI / 2;
