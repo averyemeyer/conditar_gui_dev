@@ -308,6 +308,37 @@ class LocalJobManager:
         job["archived_path"] = str(destination)
         return job
 
+    def rerun_job(self, job_id: str) -> dict:
+        paths = self._paths(job_id)
+        job = self.get_job(job_id)
+        if not job:
+            raise ValueError("Unknown job.")
+        if job.get("status") not in {"failed", "canceled"}:
+            raise ValueError("Only failed or canceled jobs can be rerun.")
+        inputs = job.get("inputs") or {}
+        pdb_path = paths.root / inputs.get("pdb", "")
+        if not pdb_path.exists():
+            raise ValueError(f"Original PDB input was not found: {pdb_path}")
+        sdf_payload = None
+        if inputs.get("sdf"):
+            sdf_path = paths.root / inputs["sdf"]
+            if not sdf_path.exists():
+                raise ValueError(f"Original SDF input was not found: {sdf_path}")
+            sdf_payload = {"name": sdf_path.name, "text": sdf_path.read_text(errors="replace")}
+        payload = {
+            "target": job.get("target") or "local_cpu",
+            "mode": job.get("mode") or ("reference" if sdf_payload else "pocket"),
+            "example_id": job.get("example_id"),
+            "input_name": f"rerun_{job.get('input_name') or pdb_path.stem}",
+            "email": job.get("email") or "",
+            "pdb": {"name": pdb_path.name, "text": pdb_path.read_text(errors="replace")},
+            "sdf": sdf_payload,
+            "slurm": job.get("slurm") or {},
+            "postprocess": job.get("postprocess") or {},
+            "parameters": job.get("parameters") or {},
+        }
+        return self.submit(payload)
+
     def cancel(self, job_id: str) -> dict:
         job = self.get_job(job_id)
         if not job:

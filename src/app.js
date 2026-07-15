@@ -1,8 +1,8 @@
-import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-cleanup-2";
-import { drawHistogram } from "./charts.js?v=20260715-cleanup-2";
-import { ExampleDataService } from "./data-service.js?v=20260715-cleanup-2";
-import { vinaWasRun } from "./sdf.js?v=20260715-cleanup-2";
-import { render2D, render3D } from "./viewers.js?v=20260715-cleanup-2";
+import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-rerun-2";
+import { drawHistogram } from "./charts.js?v=20260715-rerun-2";
+import { ExampleDataService } from "./data-service.js?v=20260715-rerun-2";
+import { vinaWasRun } from "./sdf.js?v=20260715-rerun-2";
+import { render2D, render3D } from "./viewers.js?v=20260715-rerun-2";
 
 const service = new ExampleDataService();
 const state = {
@@ -474,6 +474,7 @@ function renderJobsTable() {
       <td>
         <button class="secondary-button compact-action load-job-results" ${job.status === "completed" ? "" : "disabled"}>Results</button>
         <button class="secondary-button compact-action cancel-job" ${["completed", "failed", "canceled"].includes(job.status) ? "disabled" : ""}>Cancel</button>
+        ${["failed", "canceled"].includes(job.status) ? `<button class="secondary-button compact-action rerun-job">Rerun</button>` : ""}
         ${["failed", "canceled"].includes(job.status) ? `<button class="secondary-button compact-action danger-action cleanup-job">Clean up</button>` : ""}
       </td>
     </tr>`).join("") : `<tr><td colspan="5">No jobs yet.</td></tr>`;
@@ -489,6 +490,10 @@ function renderJobsTable() {
     }
     if (event.target.closest(".cleanup-job")) {
       await cleanupJob(job.id);
+      return;
+    }
+    if (event.target.closest(".rerun-job")) {
+      await rerunJob(job.id);
       return;
     }
     const logs = await service.getJobLogs(job.id).catch(() => ({ stdout: "", stderr: "" }));
@@ -525,6 +530,48 @@ async function cleanupJob(jobId) {
   } catch (error) {
     showToast(error.message);
   }
+}
+
+async function rerunJob(jobId) {
+  try {
+    let body;
+    try {
+      body = await service.rerunJob(jobId);
+    } catch (error) {
+      if (!/Unknown API endpoint/i.test(error.message)) throw error;
+      body = { job: await submitRerunFromSavedInputs(jobId) };
+    }
+    const job = body.job;
+    state.currentJob = job;
+    state.selectedJob = job;
+    if (job.target === "local_cpu") state.watchedJobs.add(job.id);
+    await refreshJobs(false);
+    updateJobPanel(job, "Rerun queued.");
+    updateJobDetail(job, `Rerun created from ${jobId}.`);
+    showToast(`Rerun queued as ${shortJobId(job.id)}.`);
+    if (!["failed", "canceled", "completed"].includes(job.status)) pollJob(job.id);
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function submitRerunFromSavedInputs(jobId) {
+  const original = await service.getJob(jobId);
+  const saved = await service.loadJobResults(original);
+  if (!saved.inputs?.pdb?.text) throw new Error("Original PDB input was not found for rerun.");
+  const payload = {
+    target: original.target || "local_cpu",
+    mode: original.mode || (saved.inputs.sdf ? "reference" : "pocket"),
+    example_id: original.example_id || "custom",
+    input_name: `rerun_${original.input_name || saved.inputs.pdb.name || jobId}`,
+    email: original.email || "",
+    pdb: { name: saved.inputs.pdb.name, text: saved.inputs.pdb.text },
+    sdf: saved.inputs.sdf?.text ? { name: saved.inputs.sdf.name, text: saved.inputs.sdf.text } : null,
+    slurm: original.slurm || {},
+    postprocess: original.postprocess || {},
+    parameters: original.parameters || {},
+  };
+  return service.submitJob(payload);
 }
 
 async function loadSelectedJobResults(jobId) {

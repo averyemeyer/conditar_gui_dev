@@ -101,6 +101,10 @@ class ConDitarRequestHandler(SimpleHTTPRequestHandler):
                 self._send_json(JOB_MANAGER.export_job(parts[2]))
             elif len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] in {"archive", "cleanup"}:
                 self._send_json({"job": JOB_MANAGER.archive_job(parts[2])})
+            elif len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "rerun":
+                self._send_json({"job": JOB_MANAGER.rerun_job(parts[2])}, 201)
+            elif len(parts) == 4 and parts[:3] == ["api", "jobs", "rerun"]:
+                self._send_json({"job": JOB_MANAGER.rerun_job(parts[3])}, 201)
             else:
                 self._send_json({"error": "Unknown API endpoint."}, 404)
         except ValueError as error:

@@ -1,5 +1,5 @@
-import { EXAMPLES } from "./config.js?v=20260715-cleanup-2";
-import { candidateId, parseSdf } from "./sdf.js?v=20260715-cleanup-2";
+import { EXAMPLES } from "./config.js?v=20260715-rerun-2";
+import { candidateId, parseSdf } from "./sdf.js?v=20260715-rerun-2";
 
 export class ExampleDataService {
   async loadStudy(exampleId, onProgress = () => {}) {
@@ -106,6 +106,10 @@ export class ExampleDataService {
 
   async archiveJob(jobId) {
     return fetchJson(`/api/jobs/${jobId}/archive`, { method: "POST" });
+  }
+
+  async rerunJob(jobId) {
+    return fetchJson(`/api/jobs/${jobId}/rerun`, { method: "POST" });
   }
 }
 
