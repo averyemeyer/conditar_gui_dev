@@ -1,8 +1,8 @@
-import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-robustness-1";
-import { drawHistogram } from "./charts.js?v=20260715-robustness-1";
-import { ExampleDataService } from "./data-service.js?v=20260715-robustness-1";
-import { vinaWasRun } from "./sdf.js?v=20260715-robustness-1";
-import { render2D, render3D } from "./viewers.js?v=20260715-robustness-1";
+import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-final-tidy-1";
+import { drawHistogram } from "./charts.js?v=20260715-final-tidy-1";
+import { ExampleDataService } from "./data-service.js?v=20260715-final-tidy-1";
+import { vinaWasRun } from "./sdf.js?v=20260715-final-tidy-1";
+import { render2D, render3D } from "./viewers.js?v=20260715-final-tidy-1";
 
 const service = new ExampleDataService();
 const ACTIVE_JOB_STATUSES = new Set(["queued", "running"]);
@@ -151,15 +151,15 @@ async function refreshRuntime(showMessage = false) {
   try {
     const health = await service.health();
     state.runtimeHealth = health;
+    const slurmAvailable = Boolean(health.slurm?.sbatch);
     if (!state.targetTouched) {
-      $("#job-target").value = health.gpu_available && health.slurm?.sbatch ? "osc_gpu" : "local_cpu";
+      $("#job-target").value = slurmAvailable ? "osc_gpu" : "local_cpu";
       updateJobTargetControls();
     }
     const slurm = health.slurm?.sbatch ? "sbatch available" : "sbatch not found";
     const gpu = health.gpu_available ? "GPU device visible" : "no local GPU visible";
-    const gpuTarget = health.gpu_available && health.slurm?.sbatch;
-    status.textContent = gpuTarget ? "OSC GPU available" : "Local CPU available";
-    detail.textContent = `${gpu}; ${slurm}. Selected target: ${gpuTarget ? "OSC GPU" : "Local CPU"}.`;
+    status.textContent = slurmAvailable ? "OSC Slurm available" : "Local CPU available";
+    detail.textContent = `${gpu}; ${slurm}. Selected target: ${slurmAvailable ? "OSC GPU" : "Local CPU"}.`;
     if (showMessage) showToast("Runtime selection refreshed.");
   } catch (error) {
     status.textContent = "Backend unavailable";

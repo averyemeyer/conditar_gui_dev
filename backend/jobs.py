@@ -206,6 +206,18 @@ class LocalJobManager:
                 paths = self._paths(job["id"]); job["status"] = "failed"; job["exit_code"] = result.returncode; job["finished_at"] = utc_now(); job["error_message"] = f"Slurm batch-array submission failed: {result.stderr.strip()} See {paths.root / 'run.slurm'}."; self._write_job(paths, job)
             return
         array_id = self._parse_sbatch_job_id(result.stdout)
+        if not array_id:
+            for job in jobs:
+                paths = self._paths(job["id"])
+                job["status"] = "failed"
+                job["exit_code"] = 1
+                job["finished_at"] = utc_now()
+                job["error_message"] = (
+                    "Slurm batch-array submission returned no job ID. See the batch run_array.slurm "
+                    f"and logs under {paths.logs}."
+                )
+                self._write_job(paths, job)
+            return
         for i, job in enumerate(jobs):
             job["slurm"]["job_id"] = f"{array_id}_{i}" if array_id else None
             job["slurm"]["array_job_id"] = array_id
