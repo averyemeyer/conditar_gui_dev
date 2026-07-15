@@ -292,6 +292,22 @@ class LocalJobManager:
                 bundle.write(path, path.relative_to(paths.root))
         return {"path": str(archive), "relative_path": str(archive.relative_to(paths.root)), "size": archive.stat().st_size}
 
+    def archive_job(self, job_id: str) -> dict:
+        paths = self._paths(job_id)
+        job = self.get_job(job_id)
+        if not job:
+            raise ValueError("Unknown job.")
+        if job.get("status") not in {"failed", "canceled"}:
+            raise ValueError("Only failed or canceled jobs can be cleaned up.")
+        archive_root = self.project_root / "job_data" / "archived_jobs"
+        archive_root.mkdir(parents=True, exist_ok=True)
+        destination = archive_root / job_id
+        if destination.exists():
+            raise ValueError(f"Archived job already exists: {destination}")
+        shutil.move(str(paths.root), str(destination))
+        job["archived_path"] = str(destination)
+        return job
+
     def cancel(self, job_id: str) -> dict:
         job = self.get_job(job_id)
         if not job:
@@ -697,12 +713,20 @@ class LocalJobManager:
         return parts[-1] if parts else None
 
     def _refresh_job(self, job: dict | None) -> dict | None:
-        if not job or job.get("status") in TERMINAL_STATES:
+        if not job:
+            return job
+        paths = self._paths(job["id"])
+        if job.get("status") in TERMINAL_STATES:
+            if (
+                job.get("target") != "osc_gpu"
+                and job.get("status") == "failed"
+                and "Server restarted" in (job.get("error_message") or "")
+            ):
+                self._recover_completed_local_outputs(paths, job)
             return job
         if job.get("target") != "osc_gpu":
             return job
 
-        paths = self._paths(job["id"])
         exit_code_path = paths.logs / "exit_code.txt"
         if exit_code_path.exists():
             try:
@@ -800,24 +824,46 @@ class LocalJobManager:
         paths.root.mkdir(parents=True, exist_ok=True)
         paths.metadata.write_text(json.dumps(job, indent=2))
 
+    def _output_count(self, paths: JobPaths) -> int:
+        return len(list(paths.outputs.rglob("*.sdf"))) if paths.outputs.exists() else 0
+
+    def _recover_completed_local_outputs(self, paths: JobPaths, job: dict) -> bool:
+        output_count = self._output_count(paths)
+        if output_count == 0:
+            return False
+        job.setdefault("outputs", {})["sdf_count"] = output_count
+        job["status"] = "completed"
+        job["exit_code"] = job.get("exit_code") if job.get("exit_code") is not None else 0
+        job["finished_at"] = job.get("finished_at") or utc_now()
+        job["error_message"] = None
+        job["status_note"] = (
+            "Recovered after server restart: SDF outputs were found, so this local CPU job "
+            "is available for review."
+        )
+        self._write_job(paths, job)
+        return True
+
     def _recover_incomplete_jobs(self) -> None:
         for job in self.list_jobs():
             if job["status"] not in TERMINAL_STATES:
                 if job.get("target") == "osc_gpu":
                     continue
+                paths = self._paths(job["id"])
+                if self._recover_completed_local_outputs(paths, job):
+                    continue
                 if job.get("status") == "queued" and not job.get("started_at"):
                     job["error_message"] = None
                     job["status_note"] = "Recovered queued local CPU job after server restart."
-                    self._write_job(self._paths(job["id"]), job)
+                    self._write_job(paths, job)
                     self._queue.put(job["id"])
                     continue
                 job["status"] = "failed"
                 job["finished_at"] = utc_now()
                 job["error_message"] = (
                     "Server restarted while this local CPU job was running. See logs: "
-                    f"{self._paths(job['id']).stderr} and {self._paths(job['id']).stdout}."
+                    f"{paths.stderr} and {paths.stdout}."
                 )
-                self._write_job(self._paths(job["id"]), job)
+                self._write_job(paths, job)
 
     def _work_loop(self) -> None:
         while True:

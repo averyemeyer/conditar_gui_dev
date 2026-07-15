@@ -111,7 +111,7 @@
                 </div>
                 <div class="postprocess-controls">
                   <label class="check-control">
-                    <input id="vina-enabled" type="checkbox">
+                    <input id="vina-enabled" type="checkbox" checked>
                     <span>Run Vina scoring after generation</span>
                   </label>
                   <div class="vina-options" id="vina-options" hidden>
@@ -177,6 +177,7 @@
           <div>
             <strong>Ready to generate</strong>
             <span class="run-summary">Uploaded inputs are staged per job; outputs and logs are stored in that job's folder.</span>
+            <span class="run-summary run-estimate" id="run-estimate">Estimate updates after you choose inputs.</span>
             <code id="command-preview" hidden></code>
           </div>
           <button class="primary-button" id="preview-run"><span>Generate molecules</span><b>→</b></button>
@@ -219,6 +220,7 @@
               <div><span>Runtime target</span><strong id="job-detail-target">Local CPU</strong></div>
               <div><span>Started</span><strong id="job-detail-started">-</strong></div>
             </div>
+            <div id="job-detail-alert" class="job-detail-alert" hidden></div>
             <pre id="job-detail-log" class="job-log">Select a job to view logs.</pre>
           </article>
         </div>
@@ -351,6 +353,6 @@
   <script async src="https://cdn.jsdelivr.net/npm/3dmol@2.4.2/build/3Dmol-min.js"></script>
   <script async src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script defer src="https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js"></script>
-  <script type="module" src="./src/app.js?v=20260715-docking-null-2"></script>
+  <script type="module" src="./src/app.js?v=20260715-cleanup-2"></script>
 </body>
 </html>

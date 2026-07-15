@@ -44,13 +44,17 @@ export function drawHistogram(canvas, values, label, threshold = null) {
 
 function prepare(canvas) {
   const ratio = window.devicePixelRatio || 1;
-  const width = canvas.clientWidth;
-  const height = Number(canvas.getAttribute("height")) || 220;
-  canvas.width = width * ratio;
-  canvas.height = height * ratio;
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(Number(canvas.getAttribute("height")) || rect.height || 220));
+  const backingWidth = Math.max(1, Math.round(width * ratio));
+  const backingHeight = Math.max(1, Math.round(height * ratio));
+  if (canvas.width !== backingWidth) canvas.width = backingWidth;
+  if (canvas.height !== backingHeight) canvas.height = backingHeight;
   canvas.style.height = `${height}px`;
   const ctx = canvas.getContext("2d");
-  ctx.scale(ratio, ratio);
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.imageSmoothingEnabled = false;
   return { ctx, width, height };
 }
 

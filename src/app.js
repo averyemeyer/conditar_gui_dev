@@ -1,8 +1,8 @@
-import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-docking-null-2";
-import { drawHistogram } from "./charts.js?v=20260715-docking-null-2";
-import { ExampleDataService } from "./data-service.js?v=20260715-docking-null-2";
-import { vinaWasRun } from "./sdf.js?v=20260715-docking-null-2";
-import { render2D, render3D } from "./viewers.js?v=20260715-docking-null-2";
+import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-cleanup-2";
+import { drawHistogram } from "./charts.js?v=20260715-cleanup-2";
+import { ExampleDataService } from "./data-service.js?v=20260715-cleanup-2";
+import { vinaWasRun } from "./sdf.js?v=20260715-cleanup-2";
+import { render2D, render3D } from "./viewers.js?v=20260715-cleanup-2";
 
 const service = new ExampleDataService();
 const state = {
@@ -27,6 +27,9 @@ const state = {
   histogramThreshold: null,
   exportSelection: new Set(),
   exportSelectionInitialized: false,
+  notifiedJobs: new Set(),
+  watchedJobs: new Set(),
+  thresholdFrame: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -105,11 +108,10 @@ function bindEvents() {
     $("#histogram-threshold-value").textContent = Number(event.target.value).toFixed(1);
     const metric = $("#histogram-metric").value;
     state.exportSelection = new Set((state.study?.candidates || []).filter((item) => {
-      const value = Number(item[metric]);
+      const value = thresholdMetricValue(item, metric);
       return Number.isFinite(value) && (metric === "vinaScore" ? value <= state.histogramThreshold : value >= state.histogramThreshold);
     }).map((item) => item.id));
-    renderCharts();
-    renderResultsTable();
+    scheduleThresholdRender();
   });
   $("#histogram").addEventListener("mousemove", handleHistogramHover);
   $("#histogram").addEventListener("mouseleave", () => { $("#histogram-tooltip").textContent = "Hover a bar to see its range and count."; });
@@ -265,7 +267,11 @@ async function submitGenerationJob() {
   button.querySelector("span").textContent = "Submitting";
   try {
     const payload = state.batchInputs.length ? buildBatchPayload() : buildJobPayload();
+    await prepareLocalNotifications(payload);
     const response = state.batchInputs.length ? await service.submitBatch(payload) : { jobs: [await service.submitJob(payload)], errors: [] };
+    response.jobs.forEach((item) => {
+      if (item.target === "local_cpu" && !["failed", "canceled"].includes(item.status)) state.watchedJobs.add(item.id);
+    });
     const job = response.jobs[0];
     state.currentJob = job;
     state.selectedJob = job;
@@ -352,17 +358,20 @@ async function pollJob(jobId) {
   try {
     const job = await service.getJob(jobId);
     const logs = await service.getJobLogs(jobId).catch(() => ({ stdout: "", stderr: "" }));
+    const logText = combineLogs(logs);
     state.currentJob = job;
     state.selectedJob = job;
-    updateJobPanel(job, logs.stdout || logs.stderr || "Waiting for job output.");
-    updateJobDetail(job, logs.stdout || logs.stderr || "Waiting for job output.");
+    updateJobPanel(job, logText || "Waiting for job output.");
+    updateJobDetail(job, logText || "Waiting for job output.", logs);
     renderJobsTable();
     if (job.status === "completed") {
+      notifyJobTerminal(job, "completed");
       await refreshJobs(false);
       await loadCompletedJob(job);
       return;
     }
     if (job.status === "failed" || job.status === "canceled") {
+      notifyJobTerminal(job, job.status);
       showToast(job.error_message || `Job ${job.status}.`);
       return;
     }
@@ -375,10 +384,11 @@ async function pollJob(jobId) {
 
 async function loadCompletedJob(job) {
   const result = await service.loadJobResults(job);
+  const resultLogText = combineLogs(result.logs || {});
   const candidates = result.candidates || [];
   if (!candidates.length) {
     state.selectedJob = result.job || job;
-    updateJobDetail(state.selectedJob, result.logs?.stdout || result.logs?.stderr || "No SDF files were found in the job output directory.");
+    updateJobDetail(state.selectedJob, resultLogText || "No SDF files were found in the job output directory.", result.logs || {});
     showToast(state.selectedJob?.error_message || "No SDF results were found for this job.");
     setActiveTab("jobs");
     return;
@@ -421,7 +431,7 @@ function updateJobPanel(job, logText) {
   $("#job-log").textContent = trimLog(logText || "No job submitted.");
 }
 
-function updateJobDetail(job, logText) {
+function updateJobDetail(job, logText, logs = null) {
   $("#job-detail-status").textContent = job?.status || "None";
   $("#job-detail-status").dataset.status = job?.status || "none";
   $("#job-detail-id").textContent = job?.id || "None";
@@ -429,12 +439,17 @@ function updateJobDetail(job, logText) {
   $("#job-detail-started").textContent = formatDate(job?.started_at || job?.created_at);
   const note = job?.status_note ? `${job.status_note}\n\n` : "";
   const error = job?.error_message ? `Error: ${job.error_message}\n\n` : "";
-  $("#job-detail-log").textContent = trimLog(note + error + (logText || "Select a job to view logs."));
+  const fallback = job ? jobPaths(job) : null;
+  const pathText = fallback ? `Paths:\nstdout: ${fallback.stdout}\nstderr: ${fallback.stderr}\noutputs: ${fallback.outputs}\n\n` : "";
+  const renderedLog = logText || (logs && (logs.stdout || logs.stderr) ? combineLogs(logs) : "");
+  $("#job-detail-log").textContent = trimLog(note + error + pathText + (renderedLog || "Select a job to view logs."));
+  renderJobAlert(job, fallback);
 }
 
 async function refreshJobs(showMessage = false) {
   try {
     state.jobs = await service.listJobs();
+    notifyWatchedTerminalJobs(state.jobs);
     renderJobsTable();
     if (showMessage) showToast(`Loaded ${state.jobs.length} job${state.jobs.length === 1 ? "" : "s"}.`);
   } catch (error) {
@@ -459,6 +474,7 @@ function renderJobsTable() {
       <td>
         <button class="secondary-button compact-action load-job-results" ${job.status === "completed" ? "" : "disabled"}>Results</button>
         <button class="secondary-button compact-action cancel-job" ${["completed", "failed", "canceled"].includes(job.status) ? "disabled" : ""}>Cancel</button>
+        ${["failed", "canceled"].includes(job.status) ? `<button class="secondary-button compact-action danger-action cleanup-job">Clean up</button>` : ""}
       </td>
     </tr>`).join("") : `<tr><td colspan="5">No jobs yet.</td></tr>`;
 
@@ -471,8 +487,12 @@ function renderJobsTable() {
       await cancelJob(job.id);
       return;
     }
+    if (event.target.closest(".cleanup-job")) {
+      await cleanupJob(job.id);
+      return;
+    }
     const logs = await service.getJobLogs(job.id).catch(() => ({ stdout: "", stderr: "" }));
-    updateJobDetail(job, logs.stdout || logs.stderr || "Logs are not available for this job yet.");
+    updateJobDetail(job, combineLogs(logs) || "Logs are not available for this job yet.", logs);
     if (event.target.closest(".load-job-results")) {
       await loadSelectedJobResults(job.id);
     }
@@ -493,6 +513,20 @@ async function cancelJob(jobId) {
   }
 }
 
+async function cleanupJob(jobId) {
+  try {
+    const body = await service.archiveJob(jobId);
+    if (state.selectedJob?.id === jobId) {
+      state.selectedJob = null;
+      updateJobDetail(null, "Cleaned up failed/canceled job.");
+    }
+    await refreshJobs(false);
+    showToast(`Cleaned up ${shortJobId(body.job?.id || jobId)}.`);
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
 async function loadSelectedJobResults(jobId) {
   const job = await service.getJob(jobId);
   state.selectedJob = job;
@@ -506,6 +540,94 @@ async function loadSelectedJobResults(jobId) {
 
 function trimLog(text) {
   return text.length > 5000 ? `…\n${text.slice(-5000)}` : text;
+}
+
+function combineLogs(logs = {}) {
+  const sections = [];
+  if (logs.stdout) sections.push(`STDOUT\n${logs.stdout}`);
+  if (logs.stderr) sections.push(`STDERR\n${logs.stderr}`);
+  return sections.join("\n\n");
+}
+
+function jobPaths(job) {
+  if (!job?.id) return null;
+  const base = `job_data/jobs/${job.id}`;
+  const outputDirectory = job.outputs?.directory || "outputs";
+  return {
+    stdout: `${base}/logs/stdout.log`,
+    stderr: `${base}/logs/stderr.log`,
+    outputs: `${base}/${outputDirectory}`,
+  };
+}
+
+function renderJobAlert(job, paths) {
+  const alert = $("#job-detail-alert");
+  if (!alert) return;
+  if (!job || !["failed", "canceled"].includes(job.status)) {
+    alert.hidden = true;
+    alert.innerHTML = "";
+    return;
+  }
+  const title = job.status === "failed" ? "Run failed" : "Run canceled";
+  alert.hidden = false;
+  alert.innerHTML = `
+    <strong>${title}</strong>
+    <div>${escapeHtml(job.error_message || job.status_note || "Review the logs below for details.")}</div>
+    ${paths ? `<code>${escapeHtml(paths.stderr)}</code><code>${escapeHtml(paths.stdout)}</code><code>${escapeHtml(paths.outputs)}</code>` : ""}
+  `;
+}
+
+async function prepareLocalNotifications(payload) {
+  const jobs = payload.jobs || [payload];
+  if (!jobs.some((job) => job.target === "local_cpu")) return;
+  if (!("Notification" in window) || Notification.permission !== "default") return;
+  try {
+    await Notification.requestPermission();
+  } catch {
+    // Browser notifications are optional; toast updates still work.
+  }
+}
+
+function notifyJobTerminal(job, status) {
+  if (!job?.id || state.notifiedJobs.has(job.id)) return;
+  if (job.target !== "local_cpu") return;
+  state.notifiedJobs.add(job.id);
+  const title = status === "completed" ? "conDitar run completed" : `conDitar run ${status}`;
+  const body = `${inputLabel(job)} · ${targetLabel(job)} · ${shortJobId(job.id)}`;
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(title, { body });
+  }
+}
+
+function notifyWatchedTerminalJobs(jobs) {
+  jobs.forEach((job) => {
+    if (!state.watchedJobs.has(job.id) || !["completed", "failed", "canceled"].includes(job.status)) return;
+    notifyJobTerminal(job, job.status);
+    state.watchedJobs.delete(job.id);
+  });
+}
+
+function updateRunEstimate() {
+  const estimate = $("#run-estimate");
+  if (!estimate) return;
+  const inputs = Math.max(1, state.batchInputs.length || (state.customPdb || state.study ? 1 : 0));
+  const samples = Math.max(1, Number(state.parameters.num_samples) || 1);
+  const totalSamples = inputs * samples;
+  const isGpu = resolvedTarget() === "osc_gpu";
+  if (!inputs) {
+    estimate.textContent = "Estimate updates after you choose inputs.";
+    return;
+  }
+  const minutesPerSample = isGpu ? 1.5 : 5.5;
+  const concurrencyNote = isGpu
+    ? "OSC jobs can run in parallel once scheduled."
+    : "Local CPU jobs run serially; keep this server window open.";
+  estimate.textContent = `Rule-of-thumb runtime: about ${formatDuration(totalSamples * minutesPerSample)} for ${inputs} input${inputs === 1 ? "" : "s"} × ${samples} sample${samples === 1 ? "" : "s"} on ${isGpu ? "OSC GPU" : "local CPU"}. ${concurrencyNote}`;
+}
+
+function formatDuration(minutes) {
+  if (minutes < 90) return `${Math.round(minutes)} min`;
+  return `${(minutes / 60).toFixed(minutes < 600 ? 1 : 0)} hr`;
 }
 
 function renderSummary() {
@@ -638,7 +760,7 @@ function renderCharts() {
   if (!state.exportSelectionInitialized) {
     const lowerIsBetter = metric === "vinaScore";
     state.exportSelection = new Set(state.study.candidates.filter((item) => {
-      const value = Number(item[metric]);
+      const value = thresholdMetricValue(item, metric);
       return Number.isFinite(value) && (lowerIsBetter ? value <= state.histogramThreshold : value >= state.histogramThreshold);
     }).map((item) => item.id));
     state.exportSelectionInitialized = true;
@@ -649,6 +771,19 @@ function renderCharts() {
   const passing = values.filter((value) => lowerIsBetter ? value <= state.histogramThreshold : value >= state.histogramThreshold).length;
   $("#histogram-tooltip").textContent = `${passing}/${values.length} molecules meet the threshold (${lowerIsBetter ? "at or below" : "at or above"}).`;
   drawHistogram($("#histogram"), values, label, state.histogramThreshold);
+}
+
+function thresholdMetricValue(item, metric) {
+  return metric === "vinaScore" ? dockingMetric(item) : Number(item[metric]);
+}
+
+function scheduleThresholdRender() {
+  if (state.thresholdFrame) cancelAnimationFrame(state.thresholdFrame);
+  state.thresholdFrame = requestAnimationFrame(() => {
+    state.thresholdFrame = null;
+    renderCharts();
+    renderResultsTable();
+  });
 }
 
 function handleHistogramHover(event) {
@@ -749,7 +884,7 @@ function updateJobTargetControls() {
   emailInput.closest(".job-controls").classList.toggle("is-disabled", target !== "osc_gpu");
   if (target !== "osc_gpu") {
     emailInput.value = "";
-    emailNote.textContent = "Email notifications are disabled for local CPU runs until SMTP/sendmail is configured.";
+    emailNote.textContent = "Local CPU runs use browser/system notifications when this page is allowed to notify you.";
   } else {
     emailNote.textContent = "OSC Slurm can send completion/failure notifications when an email is provided.";
   }
@@ -821,6 +956,7 @@ function updateCommand() {
     args.push(`--vina_score --vina_mode ${$("#vina-mode").value} --vina_exhaustiveness ${$("#vina-exhaustiveness").value}`);
   }
   $("#command-preview").textContent = args.join(" ");
+  updateRunEstimate();
 }
 
 function resetParameters() {
@@ -983,6 +1119,7 @@ function updateBatchLabel() {
   $("#preview-run span").textContent = count
     ? `Submit ${count} batch job${count === 1 ? "" : "s"}`
     : "Generate molecules";
+  updateRunEstimate();
 }
 
 function updateCustomOptionLabel(label) {
