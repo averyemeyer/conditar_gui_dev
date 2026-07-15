@@ -1,8 +1,8 @@
-import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260710-qvina-modes";
-import { drawHistogram } from "./charts.js?v=20260710-qvina-modes";
-import { ExampleDataService } from "./data-service.js?v=20260710-qvina-modes";
-import { vinaWasRun } from "./sdf.js?v=20260710-qvina-modes";
-import { render2D, render3D } from "./viewers.js?v=20260710-qvina-modes";
+import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-rdkit-vina";
+import { drawHistogram } from "./charts.js?v=20260715-rdkit-vina";
+import { ExampleDataService } from "./data-service.js?v=20260715-rdkit-vina";
+import { vinaWasRun } from "./sdf.js?v=20260715-rdkit-vina";
+import { render2D, render3D } from "./viewers.js?v=20260715-rdkit-vina";
 
 const service = new ExampleDataService();
 const state = {

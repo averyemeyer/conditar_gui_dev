@@ -1,5 +1,5 @@
-import { EXAMPLES } from "./config.js?v=20260710-qvina-modes";
-import { candidateId, parseSdf } from "./sdf.js?v=20260710-qvina-modes";
+import { EXAMPLES } from "./config.js?v=20260715-rdkit-vina";
+import { candidateId, parseSdf } from "./sdf.js?v=20260715-rdkit-vina";
 
 export class ExampleDataService {
   async loadStudy(exampleId, onProgress = () => {}) {
