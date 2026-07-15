@@ -34,6 +34,24 @@ export function render3D(container, molecule, receptorText, options = {}) {
 }
 
 export function render2D(container, molecule) {
+  const smiles = molecule.smiles || molecule.properties?.SMILES || "";
+  if (smiles && typeof window.initRDKitModule === "function") {
+    container.innerHTML = "<div class='viewer-loading'>Generating 2D depiction…</div>";
+    window.initRDKitModule().then((RDKit) => {
+      const mol = RDKit.get_mol(smiles);
+      if (!mol) throw new Error("Invalid SMILES");
+      try {
+        container.innerHTML = mol.get_svg(720, 480);
+      } finally {
+        mol.delete();
+      }
+    }).catch(() => renderCoordinate2D(container, molecule));
+    return;
+  }
+  renderCoordinate2D(container, molecule);
+}
+
+function renderCoordinate2D(container, molecule) {
   const width = 720;
   const height = 480;
   const pad = 45;
