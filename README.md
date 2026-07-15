@@ -89,11 +89,15 @@ git clone https://github.com/averyemeyer/conditar_gui_dev.git
 cd conditar_gui_dev
 ```
 
-Start with the OSC helper:
+Start with the GPU helper:
 
 ```bash
-./start_osc_gui.sh
+./start_gpu_gui.sh
 ```
+
+This checks that the shared image archive, Podman, and Slurm are available
+before starting the GUI. `start_osc_gui.sh` is the underlying script if you
+need to inspect or override its environment.
 
 The helper defaults to:
 
@@ -101,7 +105,7 @@ The helper defaults to:
 CONDITAR_RUNTIME=podman
 CONDITAR_DOCKER_IMAGE=localhost/conditar-dev:container-dev
 CONDITAR_DOCKER_TAR=/fs/ess/PCON0041/mey200/container_images/localhost_conditar-dev_container-dev-20260710-105038.tar.gz
-CONDITAR_SLURM_ACCOUNT=PCON0041
+CONDITAR_SLURM_ACCOUNT=PCON0041   # required for OSC submissions
 CONDITAR_SLURM_TIME=04:00:00
 CONDITAR_SLURM_MEM=32G
 CONDITAR_SLURM_CPUS=4
@@ -116,7 +120,7 @@ CONDITAR_SLURM_TIME=08:00:00 \
 ./start_osc_gui.sh
 ```
 
-In the GUI, choose **OSC GPU · Slurm/Podman** under **Where should this run?**
+In the GUI, enter your required Slurm account and choose **OSC GPU · Slurm/Podman** under **Where should this run?**
 before submitting. The backend writes `run.slurm`, submits with `sbatch`, and
 polls Slurm/log files until outputs are ready.
 
@@ -163,8 +167,7 @@ PODMAN_BIN=/path/to/podman CONDITAR_RUNTIME=podman python3 serve.py --open
 2. Select an example dataset or replace the PDB/SDF with custom files.
 3. Set **Molecules**, **Batch size**, and **Pocket radius**.
 4. Choose **This computer · CPU** or **OSC GPU · Slurm/Podman**.
-5. Open **Advanced run settings** only if you need Vina scoring, OSC Slurm
-   options, or GPU email notifications.
+5. Enable Vina scoring if desired, then review OSC Slurm options when using the GPU target.
 6. Click **Generate molecules**.
 7. Use the **Jobs** tab to monitor status and load completed outputs.
 8. Use the **Results** and **Export** tabs to inspect molecules and download
@@ -173,6 +176,12 @@ PODMAN_BIN=/path/to/podman CONDITAR_RUNTIME=podman python3 serve.py --open
 CPU email notifications are intentionally disabled in the GUI until a local
 SMTP/sendmail path is configured. OSC GPU jobs can use Slurm email notifications
 when an email address is provided.
+
+If an OSC job is `PENDING`, Slurm has accepted it but is waiting for account,
+partition, or GPU capacity. If it fails before producing container output,
+inspect `logs/sbatch.stderr.log` and `logs/stderr.log`; a missing image archive
+or an attempted pull of `localhost/conditar-dev:container-dev` indicates that
+the GPU launcher was not used or the archive path is incorrect.
 
 ## Batch folders
 
@@ -187,7 +196,7 @@ Uploaded files are copied into each job's private `inputs/` directory first.
 
 ## Vina post-processing
 
-Vina scoring is optional and lives under **Advanced run settings**. When enabled,
+Vina scoring is optional and lives in the run setup controls. When enabled,
 the backend adds Vina arguments to the same container/job after generation. The
 Results page reads SDF properties dynamically and can display/export properties
 such as:
