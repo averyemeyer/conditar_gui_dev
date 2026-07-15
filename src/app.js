@@ -274,7 +274,7 @@ async function submitGenerationJob() {
     const message = failedJobs.length
       ? `${queuedJobs} queued, ${failedJobs.length} failed. ${failedJobs[0].error_message || "See the selected job logs."}`
       : response.jobs.length > 1
-        ? `${response.jobs.length} jobs queued${response.errors.length ? `, ${response.errors.length} skipped` : ""}.`
+        ? `${response.jobs.length} ${job?.target === "osc_gpu" ? "parallel GPU tasks" : "CPU jobs queued"}${response.errors.length ? `, ${response.errors.length} skipped` : ""}.`
         : "Job queued.";
     updateJobPanel(job, message);
     updateJobDetail(job, message);

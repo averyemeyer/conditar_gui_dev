@@ -85,7 +85,7 @@ class LocalJobManager:
         self._worker = threading.Thread(target=self._work_loop, daemon=True)
         self._worker.start()
 
-    def submit(self, payload: dict) -> dict:
+    def submit(self, payload: dict, defer_osc_submit: bool = False) -> dict:
         payload = self._validated_payload(payload)
         target = payload.get("target", "local_cpu")
         if target not in {"local_cpu", "osc_gpu"}:
@@ -150,9 +150,9 @@ class LocalJobManager:
             "error_message": None,
         }
         self._write_job(paths, job)
-        if target == "osc_gpu":
+        if target == "osc_gpu" and not defer_osc_submit:
             job = self._submit_slurm_job(job, paths, pdb_path, sdf_path)
-        else:
+        elif target != "osc_gpu":
             self._queue.put(job_id)
         return job
 
@@ -162,17 +162,54 @@ class LocalJobManager:
             raise ValueError("Batch submission requires a non-empty jobs list.")
         if len(jobs_payload) > 100:
             raise ValueError("Batch submission is limited to 100 jobs at a time.")
+        targets = {str(item.get("target") or "local_cpu") for item in jobs_payload}
+        if len(targets) > 1:
+            raise ValueError("All folders in a batch must use the same run target.")
 
         submitted = []
         errors = []
         for index, job_payload in enumerate(jobs_payload, start=1):
             try:
-                submitted.append(self.submit(job_payload))
+                submitted.append(self.submit(job_payload, defer_osc_submit=bool(jobs_payload and job_payload.get("target") == "osc_gpu")))
             except Exception as error:
                 errors.append({"index": index, "input_name": job_payload.get("input_name"), "error": str(error)})
+        if submitted and all(job.get("target") == "osc_gpu" for job in submitted):
+            self._submit_slurm_array(submitted)
         if not submitted and errors:
             raise ValueError("; ".join(item["error"] for item in errors[:3]))
         return {"jobs": submitted, "errors": errors}
+
+    def _submit_slurm_array(self, jobs: list[dict]) -> None:
+        """Submit an OSC batch as one Slurm array (one task per input folder)."""
+        first = jobs[0]
+        slurm = first["slurm"]
+        scripts = []
+        for job in jobs:
+            paths = self._paths(job["id"])
+            pdb_path = paths.root / job["inputs"]["pdb"]
+            sdf_path = paths.root / job["inputs"]["sdf"] if job["inputs"].get("sdf") else None
+            script = paths.root / "run.slurm"
+            script.write_text(self._slurm_script(job, paths, pdb_path, sdf_path, slurm))
+            scripts.append(script)
+        master = self.job_root / f"batch-{first['id']}" / "run_array.slurm"
+        master.parent.mkdir(parents=True, exist_ok=True)
+        lines = ["#!/usr/bin/env bash", f"#SBATCH --job-name=conditar-batch-{first['id'][-8:]}", f"#SBATCH --array=0-{len(jobs)-1}", f"#SBATCH --cpus-per-task={slurm['cpus']}", f"#SBATCH --mem={slurm['mem']}", f"#SBATCH --time={slurm['time']}", f"#SBATCH --gpus={slurm['gpus']}"]
+        if slurm["account"]: lines.append(f"#SBATCH --account={slurm['account']}")
+        if slurm["partition"]: lines.append(f"#SBATCH --partition={slurm['partition']}")
+        lines += ["set -e", "case \"${SLURM_ARRAY_TASK_ID}\" in"]
+        lines += [f"  {i}) bash {shlex.quote(str(script))} ;;" for i, script in enumerate(scripts)]
+        lines += ["esac", ""]
+        master.write_text("\n".join(lines))
+        result = subprocess.run([self.sbatch_bin, str(master)], cwd=str(self.project_root), text=True, capture_output=True, check=False)
+        if result.returncode != 0:
+            for job in jobs:
+                paths = self._paths(job["id"]); job["status"] = "failed"; job["exit_code"] = result.returncode; job["finished_at"] = utc_now(); job["error_message"] = f"Slurm batch-array submission failed: {result.stderr.strip()} See {paths.root / 'run.slurm'}."; self._write_job(paths, job)
+            return
+        array_id = self._parse_sbatch_job_id(result.stdout)
+        for i, job in enumerate(jobs):
+            job["slurm"]["job_id"] = f"{array_id}_{i}" if array_id else None
+            job["slurm"]["array_job_id"] = array_id
+            self._write_job(self._paths(job["id"]), job)
 
     def list_jobs(self) -> list[dict]:
         jobs = [self._refresh_job(self._read_job(path.parent.name)) for path in self.job_root.glob("*/job.json")]

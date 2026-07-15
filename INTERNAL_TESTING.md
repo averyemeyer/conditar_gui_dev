@@ -65,8 +65,8 @@ least one CPU case and one OSC GPU case.
 | OSC GPU | Batch folders | Folder upload with one PDB/SDF pair per folder | Multiple jobs created and visible |
 
 Local CPU batch folders are intentionally processed serially by the backend
-worker. OSC GPU batch folders are submitted as independent Slurm jobs and may
-run in parallel when the account and partition have capacity.
+worker. OSC GPU batch folders use one Slurm array with one parallel task per
+folder; tasks may wait for available GPU/account capacity.
 
 ## What to Verify in the GUI
 
