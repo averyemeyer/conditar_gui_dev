@@ -1,8 +1,8 @@
-import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-osc-status-1";
-import { drawHistogram } from "./charts.js?v=20260715-osc-status-1";
-import { ExampleDataService } from "./data-service.js?v=20260715-osc-status-1";
-import { vinaWasRun } from "./sdf.js?v=20260715-osc-status-1";
-import { render2D, render3D } from "./viewers.js?v=20260715-osc-status-1";
+import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260715-osc-status-2";
+import { drawHistogram } from "./charts.js?v=20260715-osc-status-2";
+import { ExampleDataService } from "./data-service.js?v=20260715-osc-status-2";
+import { vinaWasRun } from "./sdf.js?v=20260715-osc-status-2";
+import { render2D, render3D } from "./viewers.js?v=20260715-osc-status-2";
 
 const service = new ExampleDataService();
 const state = {
@@ -472,8 +472,8 @@ function renderJobsTable() {
       <td>${escapeHtml(targetLabel(job))}<br><small>${escapeHtml(inputLabel(job))}</small></td>
       <td>${formatDate(job.created_at)}<br><small>${escapeHtml(slurmLabel(job))}</small></td>
       <td>
-        <button class="secondary-button compact-action load-job-results" ${job.status === "completed" ? "" : "disabled"}>Results</button>
-        <button class="secondary-button compact-action cancel-job" ${["completed", "failed", "canceled"].includes(job.status) ? "disabled" : ""}>Cancel</button>
+        ${job.status === "completed" ? `<button class="secondary-button compact-action load-job-results">Results</button>` : ""}
+        ${["queued", "running"].includes(job.status) ? `<button class="secondary-button compact-action cancel-job">Cancel</button>` : ""}
         ${["failed", "canceled"].includes(job.status) ? `<button class="secondary-button compact-action rerun-job">Rerun</button>` : ""}
         ${["failed", "canceled"].includes(job.status) ? `<button class="secondary-button compact-action danger-action cleanup-job">Clean up</button>` : ""}
       </td>
@@ -913,6 +913,8 @@ function shortJobId(jobId) {
 
 function slurmLabel(job) {
   const slurm = job?.slurm || {};
+  const terminalState = { completed: "COMPLETED", failed: "FAILED", canceled: "CANCELLED" }[job?.status];
+  if (slurm.job_id && terminalState) return `Slurm ${slurm.job_id} · ${terminalState}`;
   if (slurm.job_id && slurm.state) return `Slurm ${slurm.job_id} · ${slurm.state}`;
   if (slurm.job_id) return `Slurm ${slurm.job_id}`;
   return job?.target === "osc_gpu" ? "Slurm pending" : "";

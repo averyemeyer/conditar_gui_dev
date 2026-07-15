@@ -751,6 +751,8 @@ class LocalJobManager:
             return job
         paths = self._paths(job["id"])
         if job.get("status") in TERMINAL_STATES:
+            if job.get("target") == "osc_gpu":
+                self._normalize_terminal_slurm_state(paths, job)
             if (
                 job.get("target") != "osc_gpu"
                 and job.get("status") == "failed"
@@ -771,6 +773,7 @@ class LocalJobManager:
             job["exit_code"] = exit_code
             job["finished_at"] = job.get("finished_at") or utc_now()
             job["status"] = "completed" if exit_code == 0 else "failed"
+            job.setdefault("slurm", {})["state"] = "COMPLETED" if exit_code == 0 else "FAILED"
             if exit_code != 0:
                 job["error_message"] = (
                     f"Slurm container command exited with status {exit_code}. See logs: "
@@ -801,6 +804,7 @@ class LocalJobManager:
                 job["status"] = "completed" if output_sdfs else "failed"
                 job["finished_at"] = job.get("finished_at") or utc_now()
                 job["exit_code"] = 0 if job["status"] == "completed" else 1
+                job.setdefault("slurm", {})["state"] = "COMPLETED" if job["status"] == "completed" else state
                 if job["status"] == "failed":
                     job["error_message"] = (
                         "Slurm completed but no SDF outputs were found. See logs: "
@@ -847,12 +851,20 @@ class LocalJobManager:
         job["exit_code"] = 0
         job["error_message"] = None
         job["output_count"] = len(output_sdfs)
+        job.setdefault("slurm", {})["state"] = "COMPLETED"
         job["status_note"] = (
             f"Marked completed after finding {len(output_sdfs)} SDF output"
             f"{'' if len(output_sdfs) == 1 else 's'} in the job output directory."
         )
         self._write_job(paths, job)
         self._send_email(job, paths)
+
+    def _normalize_terminal_slurm_state(self, paths: JobPaths, job: dict) -> None:
+        slurm = job.setdefault("slurm", {})
+        expected = {"completed": "COMPLETED", "failed": "FAILED", "canceled": "CANCELLED"}.get(job.get("status"))
+        if expected and slurm.get("state") != expected:
+            slurm["state"] = expected
+            self._write_job(paths, job)
 
     def _job_has_logs(self, paths: JobPaths, job: dict) -> bool:
         if any(path.exists() and path.stat().st_size > 0 for path in (paths.stdout, paths.stderr)):

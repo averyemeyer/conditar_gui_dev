@@ -1,5 +1,5 @@
-import { EXAMPLES } from "./config.js?v=20260715-osc-status-1";
-import { candidateId, parseSdf } from "./sdf.js?v=20260715-osc-status-1";
+import { EXAMPLES } from "./config.js?v=20260715-osc-status-2";
+import { candidateId, parseSdf } from "./sdf.js?v=20260715-osc-status-2";
 
 export class ExampleDataService {
   async loadStudy(exampleId, onProgress = () => {}) {
