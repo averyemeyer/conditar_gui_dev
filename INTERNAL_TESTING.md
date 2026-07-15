@@ -9,8 +9,20 @@ On a local CPU machine with Docker Desktop:
 ```bash
 cd /path/to/conditar_gui_dev
 docker load -i /path/to/localhost_conditar-dev_container-dev-20260710-105038.tar.gz
+docker image inspect localhost/conditar-dev:container-dev >/dev/null
 CONDITAR_RUNTIME=docker python serve.py --open
 ```
+
+If the archive is still on OSC, copy it first from a local terminal:
+
+```bash
+rsync -avP \
+  <OSC_USER>@<OSC_LOGIN_HOST>:/fs/ess/PCON0041/mey200/container_images/localhost_conditar-dev_container-dev-20260710-105038.tar.gz \
+  "$HOME/containers/"
+```
+
+Docker Desktop must be installed and running for local jobs. `rsync -P` permits
+resuming the large archive transfer.
 
 Before submitting a job, verify that the loaded image exposes every supported
 post-processing mode:

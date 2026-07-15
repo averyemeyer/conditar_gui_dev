@@ -49,7 +49,28 @@ Load the conDitar image if needed:
 
 ```bash
 docker load -i /path/to/localhost_conditar-dev_container-dev.tar.gz
+docker image inspect localhost/conditar-dev:container-dev >/dev/null \
+  && echo "conDitar container loaded"
 ```
+
+To copy the shared OSC image archive to your local machine, run `rsync` from
+your local terminal (replace the placeholders with your OSC username and login
+host):
+
+```bash
+mkdir -p "$HOME/containers"
+rsync -avP \
+  <OSC_USER>@<OSC_LOGIN_HOST>:/fs/ess/PCON0041/mey200/container_images/localhost_conditar-dev_container-dev-20260710-105038.tar.gz \
+  "$HOME/containers/"
+docker load -i "$HOME/containers/localhost_conditar-dev_container-dev-20260710-105038.tar.gz"
+```
+
+Docker Desktop must be installed and running before `docker load`, `docker run`,
+or GUI job submission. The archive is large; `rsync -P` resumes an interrupted
+transfer. The shared archive is intended for local CPU testing. Local NVIDIA
+GPU execution additionally requires Docker Desktop GPU support and a compatible
+NVIDIA runtime. On Apple Silicon, use the `linux/amd64` image; emulation may be
+slower.
 
 Start the GUI:
 
@@ -130,7 +151,7 @@ The GUI chooses the container runner from environment variables:
 
 - `CONDITAR_RUNTIME=docker` for local Mac/Docker Desktop.
 - `CONDITAR_RUNTIME=podman` for OSC/Linux Podman.
-- `CONDITAR_RUNTIME=auto` to try Podman first, then Docker.
+- `CONDITAR_RUNTIME=auto` to select an available local Docker/Podman runtime.
 
 Use a different image name:
 
