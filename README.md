@@ -200,35 +200,3 @@ QVINA
 QED
 SA
 ```
-
-## Smoke test checklist
-
-For the full internal QA runbook, see [`INTERNAL_TESTING.md`](INTERNAL_TESTING.md).
-
-Before a demo or handoff, confirm:
-
-| Area | Expected result |
-| --- | --- |
-| App launch | GUI opens at `http://127.0.0.1:4173` |
-| Runtime detection | Local Mac shows CPU; OSC shows Slurm/GPU option when available |
-| Example input | Bundled PDB/SDF examples populate correctly |
-| Custom input | Replaced PDB/SDF names appear in the setup panel |
-| CPU target | Email is disabled; command preview uses CPU |
-| OSC target | Slurm fields and email are available; command preview uses GPU |
-| Vina toggle | Vina options appear only when enabled |
-| Job submission | Job ID, status, logs, and output folder are created |
-| Jobs tab | Existing jobs reload after server restart |
-| Results/export | Generated SDFs load and ZIP/CSV/SDF export works |
-
-For failed OSC jobs, inspect the job folder:
-
-```text
-job_data/jobs/<job-id>/run.slurm
-job_data/jobs/<job-id>/logs/stdout.log
-job_data/jobs/<job-id>/logs/stderr.log
-job_data/jobs/<job-id>/logs/sbatch.stderr.log
-job_data/jobs/<job-id>/logs/exit_code.txt
-```
-
-These usually identify whether the issue is Slurm submission, container image
-loading, GPU visibility, or conDitar runtime behavior.
