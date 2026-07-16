@@ -113,7 +113,7 @@ cd conditar_gui_dev
 Start with the GPU helper:
 
 ```bash
-./start_gpu_gui.sh
+./start_slurm_gui.sh
 ```
 
 This checks that Podman and Slurm are available before starting the GUI. If
