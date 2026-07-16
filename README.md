@@ -21,7 +21,7 @@ conDitar-dev container
 Typical local flow:
 
 1. Build or load the `conDitar-dev` container image.
-2. Start this GUI repo with `CONDITAR_RUNTIME=docker`.
+2. Start this GUI repo with `./start_cpu_gui.sh`.
 3. Open `http://127.0.0.1:4173`.
 4. Choose inputs, settings, and target, then click **Generate molecules**.
 
@@ -29,7 +29,27 @@ Job folders are written under `job_data/jobs/<job-id>/`. That directory is
 ignored by git and contains staged inputs, logs, metadata, generated SDFs, and
 export ZIPs.
 
-## Local Mac startup
+## Quick start
+
+For local CPU runs with Docker:
+
+```bash
+./start_cpu_gui.sh
+```
+
+For GPU runs through Slurm and Podman:
+
+```bash
+./start_slurm_gui.sh
+```
+
+Both launchers start the GUI at:
+
+```text
+http://127.0.0.1:4173
+```
+
+## Local CPU startup
 
 Requirements:
 
@@ -53,24 +73,9 @@ docker image inspect localhost/conditar-dev:container-dev >/dev/null \
   && echo "conDitar container loaded"
 ```
 
-To copy a shared image archive from a remote cluster to your local machine, run
-`rsync` from your local terminal (replace the placeholders with your cluster
-username, login host, and archive path):
-
-```bash
-mkdir -p "$HOME/containers"
-rsync -avP \
-  <CLUSTER_USER>@<CLUSTER_LOGIN_HOST>:/path/to/localhost_conditar-dev_container-dev.tar.gz \
-  "$HOME/containers/"
-docker load -i "$HOME/containers/localhost_conditar-dev_container-dev.tar.gz"
-```
-
 Docker Desktop must be installed and running before `docker load`, `docker run`,
-or GUI job submission. The archive is large; `rsync -P` resumes an interrupted
-transfer. The shared archive is intended for local CPU testing. Local NVIDIA
-GPU execution additionally requires Docker Desktop GPU support and a compatible
-NVIDIA runtime. On Apple Silicon, use the `linux/amd64` image; emulation may be
-slower.
+or GUI job submission. On Apple Silicon, use the `linux/amd64` image; emulation
+may be slower.
 
 Start the GUI:
 
@@ -91,7 +96,7 @@ a different port:
 PORT=4174 ./start_cpu_gui.sh
 ```
 
-## Slurm GPU Startup
+## Slurm GPU startup
 
 Requirements:
 
@@ -108,7 +113,7 @@ git clone https://github.com/averyemeyer/conditar_gui_dev.git
 cd conditar_gui_dev
 ```
 
-Start with the GPU helper:
+Start the Slurm GUI:
 
 ```bash
 ./start_slurm_gui.sh
@@ -120,7 +125,7 @@ otherwise it uses the named image already available to Podman.
 For site-specific defaults that should not be committed, put environment
 assignments in `.conditar-slurm.env`; the launcher loads it automatically.
 
-The helper defaults to:
+The Slurm launcher defaults to:
 
 ```bash
 CONDITAR_RUNTIME=podman
@@ -141,15 +146,16 @@ CONDITAR_SLURM_TIME=08:00:00 \
 ./start_slurm_gui.sh
 ```
 
-In the GUI, enter your required Slurm account and choose **Slurm GPU · Podman** under **Where should this run?**
-before submitting. The backend writes `run.slurm`, submits with `sbatch`, and
-polls Slurm/log files until outputs are ready.
+In the GUI, enter your required Slurm account and choose
+**Slurm GPU · Podman** under **Where should this run?** before submitting. The
+backend writes `run.slurm`, submits with `sbatch`, and polls Slurm/log files
+until outputs are ready.
 
 ## Runtime options
 
 The GUI chooses the container runner from environment variables:
 
-- `CONDITAR_RUNTIME=docker` for local Mac/Docker Desktop.
+- `CONDITAR_RUNTIME=docker` for local Docker Desktop.
 - `CONDITAR_RUNTIME=podman` for Linux/cluster Podman.
 - `CONDITAR_RUNTIME=auto` to select an available local Docker/Podman runtime.
 
@@ -181,9 +187,25 @@ launcher automatically uses `../conDitar-dev` as
 If Docker or Podman is installed in a nonstandard location:
 
 ```bash
-DOCKER_BIN=/path/to/docker CONDITAR_RUNTIME=docker python3 serve.py --open
-PODMAN_BIN=/path/to/podman CONDITAR_RUNTIME=podman python3 serve.py --open
+DOCKER_BIN=/path/to/docker ./start_cpu_gui.sh
+PODMAN_BIN=/path/to/podman ./start_slurm_gui.sh
 ```
+
+To copy a shared image archive from a remote cluster to your local machine, run
+`rsync` from your local terminal. Replace the placeholders with your cluster
+username, login host, and archive path:
+
+```bash
+mkdir -p "$HOME/containers"
+rsync -avP \
+  <CLUSTER_USER>@<CLUSTER_LOGIN_HOST>:/path/to/localhost_conditar-dev_container-dev.tar.gz \
+  "$HOME/containers/"
+docker load -i "$HOME/containers/localhost_conditar-dev_container-dev.tar.gz"
+```
+
+The archive is large; `rsync -P` resumes an interrupted transfer. Local NVIDIA
+GPU execution additionally requires Docker Desktop GPU support and a compatible
+NVIDIA runtime. For normal GPU throughput, use the Slurm/Podman path.
 
 ## Using the GUI
 
