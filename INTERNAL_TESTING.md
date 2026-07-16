@@ -56,12 +56,12 @@ CONDITAR_SOURCE_MOUNT=/path/to/conDitar-dev
 Run each case with `num_samples=1`, `batch_size=1` first. Turn Vina on for at
 least one CPU case and one Slurm GPU case.
 
-| Backend | Input mode | Example input | Expected result |
+| Backend | Input mode | Input | Expected result |
 |---|---|---|---|
-| Local CPU | Pocket only | `xxxx/xxxx_pocket.pdb` | Completed job with generated SDFs |
-| Local CPU | Protein + ligand | `4aua/4aua_protein.pdb` + `4aua/4aua_ligand.sdf` | Completed job with generated SDFs |
-| Slurm GPU | Pocket only | `xxxx/xxxx_pocket.pdb` | Slurm job moves queued -> running -> completed |
-| Slurm GPU | Protein + ligand | `4aua/4aua_protein.pdb` + `4aua/4aua_ligand.sdf` | Slurm job moves queued -> running -> completed |
+| Local CPU | Pocket only | A prepared pocket PDB from your local test set | Completed job with generated SDFs |
+| Local CPU | Protein + ligand | A protein PDB plus reference ligand SDF from your local test set | Completed job with generated SDFs |
+| Slurm GPU | Pocket only | A prepared pocket PDB from your cluster test set | Slurm job moves queued -> running -> completed |
+| Slurm GPU | Protein + ligand | A protein PDB plus reference ligand SDF from your cluster test set | Slurm job moves queued -> running -> completed |
 | Slurm GPU | Batch folders | Folder upload with one PDB/SDF pair per folder | Multiple jobs created and visible |
 
 Local CPU batch folders are intentionally processed serially by the backend

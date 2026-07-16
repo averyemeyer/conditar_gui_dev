@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="icon" type="image/png" href="./media/branding/conditar-app-icon.png">
-  <link rel="apple-touch-icon" href="./media/branding/conditar-app-icon.png">
+  <link rel="icon" type="image/png" href="./media/branding/conditar-logo-highres-transparent.png">
+  <link rel="apple-touch-icon" href="./media/branding/conditar-logo-highres-transparent.png">
   <link rel="stylesheet" href="./src/styles.css?v=20260715-source-branding-1">
 </head>
 <body>
@@ -31,7 +31,7 @@
           <p class="hero-copy">Add a protein structure, choose a few settings, and review generated candidates in 3D.</p>
         </div>
         <div class="hero-brand-panel">
-          <img class="hero-mark" src="./media/branding/conditar-hero-diffusion-wide.png" alt="" aria-hidden="true">
+          <img class="hero-mark" src="./media/branding/conditar-logo-highres-transparent.png" alt="" aria-hidden="true">
           <div class="study-status" aria-label="Loaded study summary">
             <i></i><strong id="hero-candidate-count">0</strong> candidates ·
             <span id="hero-input-mode">No input</span> ·
@@ -65,11 +65,9 @@
               <button class="active" data-mode="reference">Protein + reference ligand</button>
               <button data-mode="pocket">Pocket only</button>
             </div>
-            <label class="field-label" for="example-select">Optional demo dataset</label>
+            <label class="field-label" for="example-select">Input source</label>
             <select id="example-select">
               <option value="custom" selected>Upload your own files</option>
-              <option value="4aua">4AUA · protein + ligand</option>
-              <option value="xxxx">XXXX · prepared pocket</option>
             </select>
             <div class="dropzone" id="pdb-dropzone">
               <input id="pdb-input" type="file" accept=".pdb">
@@ -234,7 +232,7 @@
       <section id="results-section" class="workspace-section" hidden>
         <div class="section-heading">
           <div><p class="eyebrow">Step 3</p><h2>Explore results</h2></div>
-          <p id="results-source">Preview example results are loaded. Select a completed job from Jobs to review generated outputs.</p>
+          <p id="results-source">Submit a job or load a completed job from Jobs to review generated outputs.</p>
         </div>
 
         <div class="metric-strip" id="metric-strip"></div>

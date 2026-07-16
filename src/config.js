@@ -6,28 +6,4 @@ export const PARAMETERS = [
 
 export const ADVANCED_PARAMETERS = [];
 
-export const EXAMPLES = {
-  "4aua": {
-    id: "4aua",
-    label: "4AUA",
-    mode: "reference",
-    pdb: "4aua/4aua_protein.pdb",
-    sdf: "4aua/4aua_ligand.sdf",
-    outputRoot: "conditar_results/4aua",
-    outputStem: "4aua_ligand.sdf_generated_",
-    outputFallbackStem: "4aua_protein.pdb_generated_",
-    count: 100,
-    pdbRecords: "2,051 records",
-  },
-  "xxxx": {
-    id: "xxxx",
-    label: "XXXX",
-    mode: "pocket",
-    pdb: "xxxx/xxxx_pocket.pdb",
-    sdf: null,
-    outputRoot: "conditar_results/xxxx",
-    outputStem: "xxxx_pocket.pdb_generated_",
-    count: 100,
-    pdbRecords: "509 records",
-  },
-};
+export const EXAMPLES = {};

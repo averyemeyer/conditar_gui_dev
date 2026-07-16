@@ -204,6 +204,14 @@ async function loadExample(exampleId) {
   updateCustomOptionLabel("");
   updateBatchLabel();
   const example = EXAMPLES[exampleId];
+  if (!example) {
+    state.exampleId = "custom";
+    $("#example-select").value = "custom";
+    updateInputLabels(null);
+    showToast("No bundled inputs are included. Upload PDB/SDF inputs to run a job.");
+    setLoading(false);
+    return;
+  }
   $("#example-select").value = exampleId;
   setMode(example.mode, false);
   updateInputLabels(example);
@@ -250,9 +258,9 @@ function setMode(mode, updateSelect = true) {
 
 function updateInputLabels(example) {
   $("#pdb-name").textContent = example ? example.pdb.split("/").pop() : "Choose a PDB file";
-  $("#pdb-detail").textContent = example ? `${example.pdbRecords} · demo dataset` : "Required · uploaded with this job";
+  $("#pdb-detail").textContent = example ? `${example.pdbRecords} · bundled input` : "Required · uploaded with this job";
   $("#sdf-name").textContent = example?.sdf ? example.sdf.split("/").pop() : "Choose a reference SDF";
-  $("#sdf-detail").textContent = example?.sdf ? "Reference ligand · demo dataset" : "Required for protein + ligand mode";
+  $("#sdf-detail").textContent = example?.sdf ? "Reference ligand · bundled input" : "Required for protein + ligand mode";
 }
 
 function renderStudy() {
@@ -401,7 +409,7 @@ async function loadCompletedJob(job) {
     setActiveTab("jobs");
     return;
   }
-  const fallbackExample = state.study?.example || EXAMPLES[state.exampleId] || EXAMPLES["4aua"];
+  const fallbackExample = state.study?.example || EXAMPLES[state.exampleId] || {};
   const pdbInput = result.inputs?.pdb || null;
   const sdfInput = result.inputs?.sdf || null;
   state.study = {
@@ -410,8 +418,8 @@ async function loadCompletedJob(job) {
       ...fallbackExample,
       id: job.id,
       label: job.id,
-      pdb: pdbInput?.name || fallbackExample.pdb,
-      sdf: sdfInput?.name || fallbackExample.sdf,
+      pdb: pdbInput?.name || fallbackExample.pdb || "input.pdb",
+      sdf: sdfInput?.name || fallbackExample.sdf || null,
     },
     pdbText: pdbInput?.text || state.study?.pdbText || "",
     referenceSdf: sdfInput?.text || state.study?.referenceSdf || null,

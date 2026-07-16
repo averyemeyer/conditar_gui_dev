@@ -17,11 +17,6 @@ JOB_MANAGER = LocalJobManager(PROJECT_ROOT)
 REQUIRED_PATHS = (
     "index.html",
     "src/app.js",
-    "4aua/4aua_protein.pdb",
-    "4aua/4aua_ligand.sdf",
-    "xxxx/xxxx_pocket.pdb",
-    "conditar_results/4aua",
-    "conditar_results/xxxx",
 )
 
 
@@ -29,7 +24,7 @@ def validate_project() -> None:
     missing = [path for path in REQUIRED_PATHS if not (PROJECT_ROOT / path).exists()]
     if missing:
         formatted = "\n".join(f"  - {path}" for path in missing)
-        raise SystemExit(f"Required demo files are missing:\n{formatted}")
+        raise SystemExit(f"Required application files are missing:\n{formatted}")
 
 
 class ConDitarRequestHandler(SimpleHTTPRequestHandler):
