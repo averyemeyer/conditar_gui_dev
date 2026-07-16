@@ -19,6 +19,9 @@ from pathlib import Path
 
 
 TERMINAL_STATES = {"completed", "failed", "canceled"}
+SLURM_GPU_TARGET = "slurm_gpu"
+LEGACY_SLURM_GPU_TARGET = "osc_gpu"
+SLURM_GPU_TARGETS = {SLURM_GPU_TARGET, LEGACY_SLURM_GPU_TARGET}
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 SLURM_PENDING_STATES = {"CONFIGURING", "PENDING", "REQUEUED", "RESIZING", "SUSPENDED"}
 SLURM_RUNNING_STATES = {"COMPLETING", "RUNNING", "STAGE_OUT"}
@@ -44,6 +47,10 @@ def utc_now() -> str:
 def safe_name(name: str, fallback: str) -> str:
     cleaned = "".join(char for char in name if char.isalnum() or char in "._-")
     return cleaned or fallback
+
+
+def is_slurm_gpu_target(target: str | None) -> bool:
+    return target in SLURM_GPU_TARGETS
 
 
 @dataclass
@@ -85,11 +92,13 @@ class LocalJobManager:
         self._worker = threading.Thread(target=self._work_loop, daemon=True)
         self._worker.start()
 
-    def submit(self, payload: dict, defer_osc_submit: bool = False) -> dict:
+    def submit(self, payload: dict, defer_slurm_submit: bool = False) -> dict:
         payload = self._validated_payload(payload)
         target = payload.get("target", "local_cpu")
-        if target not in {"local_cpu", "osc_gpu"}:
-            raise ValueError("Only local_cpu and osc_gpu jobs are supported.")
+        if target == LEGACY_SLURM_GPU_TARGET:
+            target = SLURM_GPU_TARGET
+        if target not in {"local_cpu", SLURM_GPU_TARGET}:
+            raise ValueError("Only local CPU and Slurm GPU jobs are supported.")
         pdb = payload.get("pdb") or {}
         if not pdb.get("text"):
             raise ValueError("A PDB input is required.")
@@ -112,12 +121,12 @@ class LocalJobManager:
             sdf_path.write_text(sdf["text"])
 
         parameters = payload.get("parameters") or {}
-        parameters["device"] = "cuda:0" if target == "osc_gpu" else "cpu"
+        parameters["device"] = "cuda:0" if is_slurm_gpu_target(target) else "cpu"
         postprocess = self._postprocess_options(payload.get("postprocess") or {})
         command = self._build_command(paths, pdb_path, sdf_path, parameters, target, postprocess)
-        slurm_options = self._slurm_options(payload.get("slurm") or {}) if target == "osc_gpu" else None
-        if target == "osc_gpu" and not slurm_options["account"]:
-            raise ValueError("OSC GPU jobs require a Slurm account number. Enter it in Run setup.")
+        slurm_options = self._slurm_options(payload.get("slurm") or {}) if is_slurm_gpu_target(target) else None
+        if is_slurm_gpu_target(target) and not slurm_options["account"]:
+            raise ValueError("Slurm GPU jobs require a Slurm account number. Enter it in Run setup.")
         job = {
             "id": job_id,
             "target": target,
@@ -140,9 +149,9 @@ class LocalJobManager:
             "postprocess": postprocess,
             "slurm": slurm_options,
             "container": {
-                "backend": "slurm_podman" if target == "osc_gpu" else self.container_runtime_kind,
-                "runtime": os.environ.get("PODMAN_BIN", "podman") if target == "osc_gpu" else self.container_runtime,
-                "docker_image": self.docker_image if target == "osc_gpu" or self.container_runtime_kind in {"docker", "podman"} else None,
+                "backend": "slurm_podman" if is_slurm_gpu_target(target) else self.container_runtime_kind,
+                "runtime": os.environ.get("PODMAN_BIN", "podman") if is_slurm_gpu_target(target) else self.container_runtime,
+                "docker_image": self.docker_image if is_slurm_gpu_target(target) or self.container_runtime_kind in {"docker", "podman"} else None,
                 "source_mount": self.source_mount or None,
             },
             "command": command,
@@ -150,9 +159,9 @@ class LocalJobManager:
             "error_message": None,
         }
         self._write_job(paths, job)
-        if target == "osc_gpu" and not defer_osc_submit:
+        if is_slurm_gpu_target(target) and not defer_slurm_submit:
             job = self._submit_slurm_job(job, paths, pdb_path, sdf_path)
-        elif target != "osc_gpu":
+        elif not is_slurm_gpu_target(target):
             self._queue.put(job_id)
         return job
 
@@ -170,17 +179,17 @@ class LocalJobManager:
         errors = []
         for index, job_payload in enumerate(jobs_payload, start=1):
             try:
-                submitted.append(self.submit(job_payload, defer_osc_submit=bool(jobs_payload and job_payload.get("target") == "osc_gpu")))
+                submitted.append(self.submit(job_payload, defer_slurm_submit=bool(jobs_payload and is_slurm_gpu_target(job_payload.get("target")))))
             except Exception as error:
                 errors.append({"index": index, "input_name": job_payload.get("input_name"), "error": str(error)})
-        if submitted and all(job.get("target") == "osc_gpu" for job in submitted):
+        if submitted and all(is_slurm_gpu_target(job.get("target")) for job in submitted):
             self._submit_slurm_array(submitted)
         if not submitted and errors:
             raise ValueError("; ".join(item["error"] for item in errors[:3]))
         return {"jobs": submitted, "errors": errors}
 
     def _submit_slurm_array(self, jobs: list[dict]) -> None:
-        """Submit an OSC batch as one Slurm array (one task per input folder)."""
+        """Submit a Slurm GPU batch as one array (one task per input folder)."""
         first = jobs[0]
         slurm = first["slurm"]
         scripts = []
@@ -294,7 +303,7 @@ class LocalJobManager:
 
     def export_job(self, job_id: str) -> dict:
         paths = self._paths(job_id)
-        job = self._read_job(job_id)
+        job = self.get_job(job_id)
         if not job:
             raise ValueError("Unknown job.")
         if job.get("status") != "completed":
@@ -360,7 +369,7 @@ class LocalJobManager:
             raise ValueError("Unknown job.")
         if job["status"] in TERMINAL_STATES:
             return job
-        if job.get("target") == "osc_gpu":
+        if is_slurm_gpu_target(job.get("target")):
             slurm_job_id = (job.get("slurm") or {}).get("job_id")
             scancel = shutil.which(os.environ.get("SCANCEL_BIN", "")) if os.environ.get("SCANCEL_BIN") else shutil.which("scancel")
             if slurm_job_id and scancel:
@@ -391,17 +400,17 @@ class LocalJobManager:
         target: str = "local_cpu",
         postprocess: dict | None = None,
     ) -> list[str]:
-        if target == "osc_gpu":
+        if is_slurm_gpu_target(target):
             return self._build_docker_command(paths, pdb_path, sdf_path, parameters, device="cuda:0", gpu=True, postprocess=postprocess)
         if not self.container_runtime:
             if self.container_runtime_kind:
                 raise ValueError(
                     f"Unsupported container runtime '{self.container_runtime_kind}'. "
-                    "This GUI supports Docker locally and Podman for OSC Slurm jobs."
+                    "This GUI supports Docker locally and Podman for Slurm GPU jobs."
                 )
             raise ValueError(
                 "Docker/Podman runtime not found. Install Docker for local CPU runs "
-                "or Podman on OSC for Slurm GPU runs, then set CONDITAR_RUNTIME, "
+                "or Podman for Slurm GPU runs, then set CONDITAR_RUNTIME, "
                 "DOCKER_BIN, or PODMAN_BIN."
             )
         if self.container_runtime_kind in {"docker", "podman"}:
@@ -593,8 +602,8 @@ class LocalJobManager:
             job["finished_at"] = utc_now()
             job["exit_code"] = 127
             job["error_message"] = (
-                "Slurm submission unavailable: sbatch was not found. Start the GUI on OSC "
-                "with Slurm available or set SBATCH_BIN. See job.json and logs under "
+                "Slurm submission unavailable: sbatch was not found. Start the GUI where "
+                "Slurm is available or set SBATCH_BIN. See job.json and logs under "
                 f"{paths.root}."
             )
             (paths.logs / "sbatch.stderr.log").write_text(job["error_message"] + "\n")
@@ -763,16 +772,16 @@ class LocalJobManager:
             return job
         paths = self._paths(job["id"])
         if job.get("status") in TERMINAL_STATES:
-            if job.get("target") == "osc_gpu":
+            if is_slurm_gpu_target(job.get("target")):
                 self._normalize_terminal_slurm_state(paths, job)
             if (
-                job.get("target") != "osc_gpu"
+                not is_slurm_gpu_target(job.get("target"))
                 and job.get("status") == "failed"
                 and "Server restarted" in (job.get("error_message") or "")
             ):
                 self._recover_completed_local_outputs(paths, job)
             return job
-        if job.get("target") != "osc_gpu":
+        if not is_slurm_gpu_target(job.get("target")):
             return job
 
         exit_code_path = paths.logs / "exit_code.txt"
@@ -832,7 +841,7 @@ class LocalJobManager:
                 )
                 self._send_email(job, paths)
             self._write_job(paths, job)
-        elif job.get("target") == "osc_gpu":
+        elif is_slurm_gpu_target(job.get("target")):
             if output_sdfs:
                 self._mark_completed_from_outputs(paths, job, output_sdfs)
             elif self._job_has_logs(paths, job):
@@ -972,7 +981,7 @@ class LocalJobManager:
     def _recover_incomplete_jobs(self) -> None:
         for job in self.list_jobs():
             if job["status"] not in TERMINAL_STATES:
-                if job.get("target") == "osc_gpu":
+                if is_slurm_gpu_target(job.get("target")):
                     continue
                 paths = self._paths(job["id"])
                 if self._recover_completed_local_outputs(paths, job):

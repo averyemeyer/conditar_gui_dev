@@ -13,11 +13,11 @@ docker image inspect localhost/conditar-dev:container-dev >/dev/null
 CONDITAR_RUNTIME=docker python serve.py --open
 ```
 
-If the archive is still on OSC, copy it first from a local terminal:
+If the archive is still on a remote cluster, copy it first from a local terminal:
 
 ```bash
 rsync -avP \
-  <OSC_USER>@<OSC_LOGIN_HOST>:/fs/ess/PCON0041/mey200/container_images/localhost_conditar-dev_container-dev-20260710-105038.tar.gz \
+  <CLUSTER_USER>@<CLUSTER_LOGIN_HOST>:/path/to/localhost_conditar-dev_container-dev.tar.gz \
   "$HOME/containers/"
 ```
 
@@ -34,38 +34,38 @@ docker run --rm localhost/conditar-dev:container-dev --help
 The `--vina-mode` help text should list `none`, `vina_score`, `vina_dock`,
 `qvina`, and `all`.
 
-On an OSC desktop or VM with Podman and Slurm:
+On a cluster desktop or VM with Podman and Slurm:
 
 ```bash
-cd /users/PCON0041/mey200/NINGLAB_DEV/conditar_gui_dev
+cd /path/to/conditar_gui_dev
 CONDITAR_RUNTIME=podman \
 CONDITAR_DOCKER_IMAGE=localhost/conditar-dev:container-dev \
-CONDITAR_DOCKER_TAR=/fs/ess/PCON0041/mey200/container_images/localhost_conditar-dev_container-dev-20260710-105038.tar.gz \
-CONDITAR_SLURM_ACCOUNT=PCON0041 \
-python serve.py --host 0.0.0.0 --port 4173 --open
+CONDITAR_DOCKER_TAR=/path/to/localhost_conditar-dev_container-dev.tar.gz \
+CONDITAR_SLURM_ACCOUNT=your-account \
+./start_slurm_gui.sh
 ```
 
 For source-code iteration without rebuilding the container, add:
 
 ```bash
-CONDITAR_SOURCE_MOUNT=/users/PCON0041/mey200/NINGLAB_DEV/conDitar-dev
+CONDITAR_SOURCE_MOUNT=/path/to/conDitar-dev
 ```
 
 ## Smoke Test Matrix
 
 Run each case with `num_samples=1`, `batch_size=1` first. Turn Vina on for at
-least one CPU case and one OSC GPU case.
+least one CPU case and one Slurm GPU case.
 
 | Backend | Input mode | Example input | Expected result |
 |---|---|---|---|
 | Local CPU | Pocket only | `xxxx/xxxx_pocket.pdb` | Completed job with generated SDFs |
 | Local CPU | Protein + ligand | `4aua/4aua_protein.pdb` + `4aua/4aua_ligand.sdf` | Completed job with generated SDFs |
-| OSC GPU | Pocket only | `xxxx/xxxx_pocket.pdb` | Slurm job moves queued -> running -> completed |
-| OSC GPU | Protein + ligand | `4aua/4aua_protein.pdb` + `4aua/4aua_ligand.sdf` | Slurm job moves queued -> running -> completed |
-| OSC GPU | Batch folders | Folder upload with one PDB/SDF pair per folder | Multiple jobs created and visible |
+| Slurm GPU | Pocket only | `xxxx/xxxx_pocket.pdb` | Slurm job moves queued -> running -> completed |
+| Slurm GPU | Protein + ligand | `4aua/4aua_protein.pdb` + `4aua/4aua_ligand.sdf` | Slurm job moves queued -> running -> completed |
+| Slurm GPU | Batch folders | Folder upload with one PDB/SDF pair per folder | Multiple jobs created and visible |
 
 Local CPU batch folders are intentionally processed serially by the backend
-worker. OSC GPU batch folders use one Slurm array with one parallel task per
+worker. Slurm GPU batch folders use one Slurm array with one parallel task per
 folder; tasks may wait for available GPU/account capacity.
 
 ## What to Verify in the GUI
@@ -75,13 +75,13 @@ Setup:
 - Switching between `Protein + reference ligand` and `Pocket only` changes the
   required upload fields.
 - Folder upload skips invalid folders and reports how many were accepted.
-- OSC Slurm controls appear only for the OSC GPU target.
+- Slurm controls appear only for the Slurm GPU target.
 - Vina controls appear only when Vina scoring is enabled.
 
 Jobs:
 
 - Newly submitted jobs appear in the Jobs tab.
-- OSC jobs display Slurm job IDs when available.
+- Slurm GPU jobs display Slurm job IDs when available.
 - Jobs do not remain stuck as `queued` after logs show they started.
 - Failed or no-output jobs show an error in the selected-job log panel.
 - Cancel works for queued/running jobs when Slurm or a local process is active.
@@ -117,7 +117,7 @@ outputs/*.sdf
 ```
 
 If a job failed, first inspect `logs/stderr.log` and `job.json:error_message`.
-If OSC status is flaky, the GUI may display a status note while still using the
+If Slurm status is flaky, the GUI may display a status note while still using the
 job logs and output files as fallback evidence.
 
 ## Timing Notes
@@ -132,4 +132,4 @@ larger batch size when memory allows, for example `num_samples=100` and
 
 CPU generation is intended as a compatibility and smoke-test path. Even a
 single molecule can take several minutes because all 1,000 diffusion steps run
-on the CPU; use OSC GPU jobs for normal throughput testing.
+on the CPU; use Slurm GPU jobs for normal throughput testing.

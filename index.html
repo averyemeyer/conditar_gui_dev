@@ -16,7 +16,7 @@
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="#" aria-label="conDitar home">
-        <img class="brand-logo" src="./media/branding/conditar-logo-horizontal.png" alt="conDitar">
+        <img class="brand-logo" src="./media/branding/conditar-logo-highres-transparent.png" alt="conDitar">
       </a>
       <div class="topbar-meta">
         <button class="icon-button" id="theme-toggle" aria-label="Toggle contrast">◐</button>
@@ -25,13 +25,13 @@
 
     <main>
       <section class="hero">
-        <div>
+        <div class="hero-text">
           <p class="eyebrow">conDitar molecular generation</p>
           <h1>Generate and explore molecules.</h1>
           <p class="hero-copy">Add a protein structure, choose a few settings, and review generated candidates in 3D.</p>
         </div>
         <div class="hero-brand-panel">
-          <img class="hero-mark" src="./media/branding/conditar-hero-mark.png" alt="" aria-hidden="true">
+          <img class="hero-mark" src="./media/branding/conditar-hero-diffusion-wide.png" alt="" aria-hidden="true">
           <div class="study-status" aria-label="Loaded study summary">
             <i></i><strong id="hero-candidate-count">0</strong> candidates ·
             <span id="hero-input-mode">No input</span> ·
@@ -100,7 +100,7 @@
                 <span class="field-label">Where should this run?</span>
                 <select id="job-target">
                   <option value="local_cpu">This computer · CPU</option>
-                  <option value="osc_gpu">OSC GPU · Slurm/Podman</option>
+                  <option value="slurm_gpu">Slurm GPU · Podman</option>
                 </select>
               </div>
               <div class="runtime-readout"><span>Detected environment</span><strong id="runtime-status">Detecting…</strong><small id="runtime-detail">Choosing a default target for this host.</small></div>
@@ -112,7 +112,7 @@
                 <div class="job-controls">
                   <label class="field-label" for="job-email">Email when finished</label>
                   <input id="job-email" type="email" placeholder="name@example.edu">
-                  <small id="email-note">Email notifications are currently available for OSC Slurm runs.</small>
+                  <small id="email-note">Email notifications are currently available for Slurm GPU runs.</small>
                 </div>
                 <div class="postprocess-controls">
                   <label class="check-control">
@@ -342,7 +342,7 @@
         </div>
         <div class="help-grid">
           <article class="panel help-card"><h3>Set up a run</h3><p>Choose where to run, then choose <strong>Protein + reference ligand</strong> or <strong>Pocket only</strong>. Upload a PDB; reference mode also needs an SDF. Use the folder picker for batches.</p></article>
-          <article class="panel help-card"><h3>Batch behavior</h3><p>Each folder is processed as its own job; inputs are never mixed. CPU batches run one at a time. OSC GPU batches can run in parallel when Slurm has capacity.</p></article>
+          <article class="panel help-card"><h3>Batch behavior</h3><p>Each folder is processed as its own job; inputs are never mixed. CPU batches run one at a time. Slurm GPU batches can run in parallel when scheduler capacity is available.</p></article>
           <article class="panel help-card"><h3>Job states</h3><p><strong>Queued/PENDING</strong> means the queue has not started the job. <strong>Running</strong> means container execution has begun. Failed and canceled jobs include a reason and log paths.</p></article>
           <article class="panel help-card"><h3>Vina and QVina</h3><p>The primary Vina score is a standard energy score: lower is better. Vina minimize and dock are separate outputs. QVina is reported separately when selected.</p></article>
           <article class="panel help-card"><h3>Filter and export</h3><p>Change a distribution threshold to select candidates automatically, then adjust individual checkboxes in the table. Export the selected subset or uncheck the scope option to export all candidates.</p></article>

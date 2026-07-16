@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import urllib.request
 from pathlib import Path
 
@@ -24,8 +25,9 @@ def post_json(url: str, payload: dict) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Submit a tiny conDitar GUI backend test job.")
     parser.add_argument("--url", default="http://127.0.0.1:4173/api/jobs")
-    parser.add_argument("--target", choices=["local_cpu", "osc_gpu"], default="osc_gpu")
-    parser.add_argument("--examples", default="/fs/ess/PCON0041/gruoxi/conDitar-dev/examples")
+    parser.add_argument("--target", choices=["local_cpu", "slurm_gpu"], default="slurm_gpu")
+    parser.add_argument("--examples", default="/path/to/conDitar-dev/examples")
+    parser.add_argument("--slurm-account", default=os.environ.get("CONDITAR_SLURM_ACCOUNT", ""))
     parser.add_argument("--no-vina", action="store_true")
     args = parser.parse_args()
 
@@ -48,7 +50,7 @@ def main() -> int:
             "vina_cpu": "4",
         },
         "slurm": {
-            "account": "PCON0041",
+            "account": args.slurm_account,
             "time": "04:00:00",
             "mem": "32G",
             "cpus": "4",

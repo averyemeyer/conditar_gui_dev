@@ -53,16 +53,16 @@ docker image inspect localhost/conditar-dev:container-dev >/dev/null \
   && echo "conDitar container loaded"
 ```
 
-To copy the shared OSC image archive to your local machine, run `rsync` from
-your local terminal (replace the placeholders with your OSC username and login
-host):
+To copy a shared image archive from a remote cluster to your local machine, run
+`rsync` from your local terminal (replace the placeholders with your cluster
+username, login host, and archive path):
 
 ```bash
 mkdir -p "$HOME/containers"
 rsync -avP \
-  <OSC_USER>@<OSC_LOGIN_HOST>:/fs/ess/PCON0041/mey200/container_images/localhost_conditar-dev_container-dev-20260710-105038.tar.gz \
+  <CLUSTER_USER>@<CLUSTER_LOGIN_HOST>:/path/to/localhost_conditar-dev_container-dev.tar.gz \
   "$HOME/containers/"
-docker load -i "$HOME/containers/localhost_conditar-dev_container-dev-20260710-105038.tar.gz"
+docker load -i "$HOME/containers/localhost_conditar-dev_container-dev.tar.gz"
 ```
 
 Docker Desktop must be installed and running before `docker load`, `docker run`,
@@ -93,17 +93,17 @@ a different port:
 python3 serve.py --port 4174 --open
 ```
 
-## OSC GPU startup
+## Slurm GPU Startup
 
 Requirements:
 
-- An OSC session with Slurm available
-- Podman available on the OSC host/compute environment
+- A cluster session with Slurm available
+- Podman available on the login or compute environment
 - The conDitar image available as `localhost/conditar-dev:container-dev`, or a
   shared image archive that can be loaded by the Slurm job
-- Any OSC-specific setup required for remote desktop access
+- Any site-specific setup required for remote desktop or web access
 
-Clone or update the GUI on OSC:
+Clone or update the GUI on the cluster:
 
 ```bash
 git clone https://github.com/averyemeyer/conditar_gui_dev.git
@@ -116,17 +116,19 @@ Start with the GPU helper:
 ./start_gpu_gui.sh
 ```
 
-This checks that the shared image archive, Podman, and Slurm are available
-before starting the GUI. `start_osc_gui.sh` is the underlying script if you
-need to inspect or override its environment.
+This checks that Podman and Slurm are available before starting the GUI. If
+`CONDITAR_DOCKER_TAR` is set, the Slurm job loads that archive before running;
+otherwise it uses the named image already available to Podman.
+For site-specific defaults that should not be committed, put environment
+assignments in `.conditar-slurm.env`; the launcher loads it automatically.
 
 The helper defaults to:
 
 ```bash
 CONDITAR_RUNTIME=podman
 CONDITAR_DOCKER_IMAGE=localhost/conditar-dev:container-dev
-CONDITAR_DOCKER_TAR=/fs/ess/PCON0041/mey200/container_images/localhost_conditar-dev_container-dev-20260710-105038.tar.gz
-CONDITAR_SLURM_ACCOUNT=PCON0041   # required for OSC submissions
+CONDITAR_DOCKER_TAR=                  # optional archive to load inside the job
+CONDITAR_SLURM_ACCOUNT=               # required by many Slurm sites
 CONDITAR_SLURM_TIME=04:00:00
 CONDITAR_SLURM_MEM=32G
 CONDITAR_SLURM_CPUS=4
@@ -138,10 +140,10 @@ Override any default inline when needed:
 ```bash
 CONDITAR_SLURM_PARTITION=nextgen \
 CONDITAR_SLURM_TIME=08:00:00 \
-./start_osc_gui.sh
+./start_slurm_gui.sh
 ```
 
-In the GUI, enter your required Slurm account and choose **OSC GPU · Slurm/Podman** under **Where should this run?**
+In the GUI, enter your required Slurm account and choose **Slurm GPU · Podman** under **Where should this run?**
 before submitting. The backend writes `run.slurm`, submits with `sbatch`, and
 polls Slurm/log files until outputs are ready.
 
@@ -150,7 +152,7 @@ polls Slurm/log files until outputs are ready.
 The GUI chooses the container runner from environment variables:
 
 - `CONDITAR_RUNTIME=docker` for local Mac/Docker Desktop.
-- `CONDITAR_RUNTIME=podman` for OSC/Linux Podman.
+- `CONDITAR_RUNTIME=podman` for Linux/cluster Podman.
 - `CONDITAR_RUNTIME=auto` to select an available local Docker/Podman runtime.
 
 Use a different image name:
@@ -171,8 +173,8 @@ python3 serve.py --open
 ```
 
 This is useful for source-only conDitar edits. Rebuild the container when
-dependencies, model/checkpoint files, or container setup changes. On OSC,
-`start_osc_gui.sh` automatically uses `../conDitar-dev` as
+dependencies, model/checkpoint files, or container setup changes. The Slurm GPU
+launcher automatically uses `../conDitar-dev` as
 `CONDITAR_SOURCE_MOUNT` when that sibling checkout exists.
 
 If Docker or Podman is installed in a nonstandard location:
@@ -187,18 +189,18 @@ PODMAN_BIN=/path/to/podman CONDITAR_RUNTIME=podman python3 serve.py --open
 1. Choose **Protein + reference ligand** or **Pocket only**.
 2. Select an example dataset or replace the PDB/SDF with custom files.
 3. Set **Molecules**, **Batch size**, and **Pocket radius**.
-4. Choose **This computer · CPU** or **OSC GPU · Slurm/Podman**.
-5. Enable Vina scoring if desired, then review OSC Slurm options when using the GPU target.
+4. Choose **This computer · CPU** or **Slurm GPU · Podman**.
+5. Enable Vina scoring if desired, then review Slurm options when using the GPU target.
 6. Click **Generate molecules**.
 7. Use the **Jobs** tab to monitor status and load completed outputs.
 8. Use the **Results** and **Export** tabs to inspect molecules and download
    SDF/CSV/ZIP artifacts.
 
 CPU email notifications are intentionally disabled in the GUI until a local
-SMTP/sendmail path is configured. OSC GPU jobs can use Slurm email notifications
+SMTP/sendmail path is configured. Slurm GPU jobs can use scheduler email notifications
 when an email address is provided.
 
-If an OSC job is `PENDING`, Slurm has accepted it but is waiting for account,
+If a Slurm job is `PENDING`, the scheduler has accepted it but is waiting for account,
 partition, or GPU capacity. If it fails before producing container output,
 inspect `logs/sbatch.stderr.log` and `logs/stderr.log`; a missing image archive
 or an attempted pull of `localhost/conditar-dev:container-dev` indicates that
@@ -209,8 +211,9 @@ the GPU launcher was not used or the archive path is incorrect.
 The GUI can accept folders of paired inputs.
 
 - Local CPU batches become one job per folder in a serial local worker queue.
-- OSC GPU batches submit one independent `sbatch` job per folder, allowing Slurm
-  to run them in parallel subject to account, partition, and GPU availability.
+- Slurm GPU batches submit one Slurm array with one task per folder, allowing
+  Slurm to run them in parallel subject to account, partition, and GPU
+  availability.
 
 The browser never passes arbitrary client filesystem paths into the container.
 Uploaded files are copied into each job's private `inputs/` directory first.

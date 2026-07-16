@@ -8,6 +8,8 @@ const service = new ExampleDataService();
 const ACTIVE_JOB_STATUSES = new Set(["queued", "running"]);
 const TERMINAL_JOB_STATUSES = new Set(["completed", "failed", "canceled"]);
 const CLEANUP_JOB_STATUSES = new Set(["failed", "canceled"]);
+const SLURM_GPU_TARGET = "slurm_gpu";
+const LEGACY_SLURM_GPU_TARGET = "osc_gpu";
 
 const state = {
   study: null,
@@ -153,13 +155,13 @@ async function refreshRuntime(showMessage = false) {
     state.runtimeHealth = health;
     const slurmAvailable = Boolean(health.slurm?.sbatch);
     if (!state.targetTouched) {
-      $("#job-target").value = slurmAvailable ? "osc_gpu" : "local_cpu";
+      $("#job-target").value = slurmAvailable ? SLURM_GPU_TARGET : "local_cpu";
       updateJobTargetControls();
     }
     const slurm = health.slurm?.sbatch ? "sbatch available" : "sbatch not found";
     const gpu = health.gpu_available ? "GPU device visible" : "no local GPU visible";
-    status.textContent = slurmAvailable ? "OSC Slurm available" : "Local CPU available";
-    detail.textContent = `${gpu}; ${slurm}. Selected target: ${slurmAvailable ? "OSC GPU" : "Local CPU"}.`;
+    status.textContent = slurmAvailable ? "Slurm GPU available" : "Local CPU available";
+    detail.textContent = `${gpu}; ${slurm}. Selected target: ${slurmAvailable ? "Slurm GPU" : "Local CPU"}.`;
     if (showMessage) showToast("Runtime selection refreshed.");
   } catch (error) {
     status.textContent = "Backend unavailable";
@@ -285,7 +287,7 @@ async function submitGenerationJob() {
     const message = failedJobs.length
       ? `${queuedJobs} queued, ${failedJobs.length} failed. ${failedJobs[0].error_message || "See the selected job logs."}`
       : response.jobs.length > 1
-        ? `${response.jobs.length} ${job?.target === "osc_gpu" ? "parallel GPU tasks" : "CPU jobs queued"}${response.errors.length ? `, ${response.errors.length} skipped` : ""}.`
+        ? `${response.jobs.length} ${isSlurmGpuTarget(job?.target) ? "parallel GPU tasks" : "CPU jobs queued"}${response.errors.length ? `, ${response.errors.length} skipped` : ""}.`
         : "Job queued.";
     updateJobPanel(job, message);
     updateJobDetail(job, message);
@@ -328,7 +330,7 @@ function buildJobPayload(inputOverride = null) {
     postprocess: buildPostprocessPayload(),
     parameters: {
       ...state.parameters,
-      device: resolvedTarget() === "osc_gpu" ? "cuda:0" : "cpu",
+      device: isSlurmGpuTarget(resolvedTarget()) ? "cuda:0" : "cpu",
     },
   };
 }
@@ -673,16 +675,16 @@ function updateRunEstimate() {
   const inputs = Math.max(1, state.batchInputs.length || (state.customPdb || state.study ? 1 : 0));
   const samples = Math.max(1, Number(state.parameters.num_samples) || 1);
   const totalSamples = inputs * samples;
-  const isGpu = resolvedTarget() === "osc_gpu";
+  const isGpu = isSlurmGpuTarget(resolvedTarget());
   if (!inputs) {
     estimate.textContent = "Estimate updates after you choose inputs.";
     return;
   }
   const minutesPerSample = isGpu ? 1.5 : 5.5;
   const concurrencyNote = isGpu
-    ? "OSC jobs can run in parallel once scheduled."
+    ? "Slurm GPU jobs can run in parallel once scheduled."
     : "Local CPU jobs run serially; keep this server window open.";
-  estimate.textContent = `Rule-of-thumb runtime: about ${formatDuration(totalSamples * minutesPerSample)} for ${inputs} input${inputs === 1 ? "" : "s"} × ${samples} sample${samples === 1 ? "" : "s"} on ${isGpu ? "OSC GPU" : "local CPU"}. ${concurrencyNote}`;
+  estimate.textContent = `Rule-of-thumb runtime: about ${formatDuration(totalSamples * minutesPerSample)} for ${inputs} input${inputs === 1 ? "" : "s"} × ${samples} sample${samples === 1 ? "" : "s"} on ${isGpu ? "Slurm GPU" : "local CPU"}. ${concurrencyNote}`;
 }
 
 function formatDuration(minutes) {
@@ -914,8 +916,12 @@ function updateResultsSource() {
 function targetLabel(job) {
   if (!job) return "Local CPU";
   if (job.target === "local_cpu") return "Local CPU";
-  if (job.target === "osc_gpu") return "OSC GPU";
+  if (isSlurmGpuTarget(job.target)) return "Slurm GPU";
   return job.target || "Local CPU";
+}
+
+function isSlurmGpuTarget(target) {
+  return target === SLURM_GPU_TARGET || target === LEGACY_SLURM_GPU_TARGET;
 }
 
 function isActiveJob(job) {
@@ -937,7 +943,7 @@ function slurmLabel(job) {
   if (slurm.job_id && terminalState) return `Slurm ${slurm.job_id} · ${terminalState}`;
   if (slurm.job_id && slurm.state) return `Slurm ${slurm.job_id} · ${slurm.state}`;
   if (slurm.job_id) return `Slurm ${slurm.job_id}`;
-  return job?.target === "osc_gpu" ? "Slurm pending" : "";
+  return isSlurmGpuTarget(job?.target) ? "Slurm pending" : "";
 }
 
 function inputLabel(job) {
@@ -946,19 +952,20 @@ function inputLabel(job) {
 
 function updateJobTargetControls() {
   const target = resolvedTarget();
-  $("#slurm-controls").hidden = target !== "osc_gpu";
-  $("#job-runtime-label").textContent = target === "osc_gpu" ? "OSC GPU" : "Local CPU";
+  const isSlurmGpu = isSlurmGpuTarget(target);
+  $("#slurm-controls").hidden = !isSlurmGpu;
+  $("#job-runtime-label").textContent = isSlurmGpu ? "Slurm GPU" : "Local CPU";
   const emailInput = $("#job-email");
   const emailNote = $("#email-note");
-  emailInput.disabled = target !== "osc_gpu";
-  emailInput.closest(".job-controls").classList.toggle("is-disabled", target !== "osc_gpu");
-  if (target !== "osc_gpu") {
+  emailInput.disabled = !isSlurmGpu;
+  emailInput.closest(".job-controls").classList.toggle("is-disabled", !isSlurmGpu);
+  if (!isSlurmGpu) {
     emailInput.value = "";
     emailNote.textContent = "Local CPU runs use browser/system notifications when this page is allowed to notify you.";
   } else {
-    emailNote.textContent = "OSC Slurm can send completion/failure notifications when an email is provided.";
+    emailNote.textContent = "Slurm can send completion/failure notifications when an email is provided.";
   }
-  state.parameters.device = target === "osc_gpu" ? "auto" : "cpu";
+  state.parameters.device = isSlurmGpu ? "auto" : "cpu";
   updateBatchLabel();
   updateCommand();
 }
@@ -1015,7 +1022,7 @@ function updateCommand() {
   const sdfName = state.customSdf?.name || EXAMPLES[state.exampleId]?.sdf;
   const args = [
     "conditar-sample",
-    `--device ${resolvedTarget() === "osc_gpu" ? "cuda:0" : "cpu"}`,
+    `--device ${isSlurmGpuTarget(resolvedTarget()) ? "cuda:0" : "cpu"}`,
     `--num_samples ${state.parameters.num_samples}`,
     `--batch_size ${state.parameters.batch_size}`,
     `--pocket_radius ${state.parameters.pocket_radius}`,
@@ -1172,19 +1179,19 @@ async function readValidatedTextFile(file, kind, showError = true) {
 function updateBatchLabel() {
   const count = state.batchInputs.length;
   const target = resolvedTarget();
-  const isOsc = target === "osc_gpu";
+  const isSlurmGpu = isSlurmGpuTarget(target);
   const cpuBatchWarning = count > 10
-    ? "Large local CPU batches can take many hours. Keep this server window open, or use OSC GPU/Slurm for durable parallel queueing."
+    ? "Large local CPU batches can take many hours. Keep this server window open, or use Slurm GPU for durable parallel queueing."
     : "Local CPU batches run one at a time. Keep this server window open until the queued jobs finish.";
   $("#folder-name").textContent = count ? `${count} batch folder${count === 1 ? "" : "s"}` : "Batch folders";
   $("#folder-detail").textContent = count
-    ? `Generate will submit ${count} ${isOsc ? "independent Slurm" : "serial queued CPU"} job${count === 1 ? "" : "s"}`
+    ? `Generate will submit ${count} ${isSlurmGpu ? "independent Slurm" : "serial queued CPU"} job${count === 1 ? "" : "s"}`
     : "Optional: one PDB and optional SDF per folder";
   $("#batch-mode-banner").hidden = !count;
-  $("#batch-mode-banner").classList.toggle("is-warning", Boolean(count && !isOsc));
-  $("#batch-mode-title").textContent = isOsc ? "Parallel GPU batch" : "Queued CPU batch";
+  $("#batch-mode-banner").classList.toggle("is-warning", Boolean(count && !isSlurmGpu));
+  $("#batch-mode-title").textContent = isSlurmGpu ? "Parallel GPU batch" : "Queued CPU batch";
   $("#batch-mode-message").textContent = count
-    ? `${count} folder${count === 1 ? "" : "s"} ready. ${isOsc ? "Slurm will process folders concurrently when capacity is available." : cpuBatchWarning} Each folder is processed as its own job; inputs are never mixed.`
+    ? `${count} folder${count === 1 ? "" : "s"} ready. ${isSlurmGpu ? "Slurm will process folders concurrently when capacity is available." : cpuBatchWarning} Each folder is processed as its own job; inputs are never mixed.`
     : "Each selected folder will submit as a separate job.";
   $("#preview-run span").textContent = count
     ? `Submit ${count} batch job${count === 1 ? "" : "s"}`
@@ -1242,23 +1249,27 @@ async function downloadAll() {
   if (state.study.referenceSdf) zip.file(filenameOnly(state.study.example.sdf || "reference.sdf"), state.study.referenceSdf);
   const blob = await zip.generateAsync({ type: "blob" });
   downloadBlob(blob, `${studyName()}_study.zip`, "application/zip");
-  showToast(archiveNotice);
+  showToast(archiveNotice, 10000);
   button.disabled = false;
   button.innerHTML = "Download ZIP <b>↓</b>";
 }
 
 function buildConfiguration() {
-  const example = EXAMPLES[state.exampleId];
+  const job = state.resultSource === "job" ? state.selectedJob || state.currentJob : null;
+  const example = state.study?.example || EXAMPLES[state.exampleId];
+  const mode = job?.mode || state.mode;
   return {
     interface_version: "0.1.0",
     backend_connected: true,
-    job_id: state.resultSource === "job" ? state.currentJob?.id || null : null,
-    conditioning_mode: state.mode,
+    job_id: job?.id || null,
+    conditioning_mode: mode,
     inputs: {
-      pdb_filename: state.customPdb?.name || example?.pdb || null,
-      sdf_filename: state.mode === "reference" ? (state.customSdf?.name || example?.sdf || null) : null,
+      pdb_filename: job ? (job.inputs?.pdb ? filenameOnly(job.inputs.pdb) : example?.pdb || null) : state.customPdb?.name || example?.pdb || null,
+      sdf_filename: mode === "reference"
+        ? (job ? (job.inputs?.sdf ? filenameOnly(job.inputs.sdf) : example?.sdf || null) : state.customSdf?.name || example?.sdf || null)
+        : null,
     },
-    parameters: { ...state.parameters },
+    parameters: { ...(job?.parameters || state.parameters) },
   };
 }
 
@@ -1347,12 +1358,12 @@ function setLoading(loading) {
   if (loading) $("#hero-status").textContent = "Loading";
 }
 
-function showToast(message) {
+function showToast(message, duration = 3400) {
   const toast = $("#toast");
   toast.textContent = message;
   toast.classList.add("show");
   clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => toast.classList.remove("show"), 3400);
+  showToast.timer = setTimeout(() => toast.classList.remove("show"), duration);
 }
 
 function formatBytes(bytes) {
