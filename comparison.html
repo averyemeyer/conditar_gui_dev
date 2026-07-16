@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Independent molecule results comparison table study">
+  <title>Molecule Results Comparison Study</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./src/comparison.css">
+</head>
+<body>
+  <main class="study-shell">
+    <header class="study-header">
+      <div>
+        <p class="eyebrow">Independent table study</p>
+        <h1>Experiment runs vs repeated runs</h1>
+        <p class="subtitle">A standalone Plotly/HTML viewer for comparing distribution shape, summary statistics, and case-level agreement across docking and RDKit descriptors.</p>
+      </div>
+      <div class="header-actions">
+        <button class="icon-button" id="theme-toggle" aria-label="Toggle contrast">◐</button>
+        <div class="row-pill">
+          <strong id="comparison-row-count">Loading</strong> rows ·
+          <span id="comparison-case-count">0 cases</span>
+        </div>
+      </div>
+    </header>
+
+    <section class="toolbar">
+      <label>
+        <span>Metric</span>
+        <select id="metric-select"></select>
+      </label>
+      <label>
+        <span>Case</span>
+        <select id="case-select"><option value="all">All cases</option></select>
+      </label>
+      <label>
+        <span>Rows</span>
+        <select id="source-select">
+          <option value="both">Both sources</option>
+          <option value="generated">Repeated runs only</option>
+          <option value="curated_without_opt">Experiment runs only</option>
+        </select>
+      </label>
+      <label>
+        <span>Search</span>
+        <input id="molecule-search" type="search" placeholder="Case, molecule, SMILES, SDF">
+      </label>
+    </section>
+
+    <div class="status" id="load-status">Loading recap CSV...</div>
+
+    <section class="kpi-grid" id="comparison-kpis"></section>
+
+    <section class="plot-grid">
+      <article class="plot-panel">
+        <div>
+          <h2>Distribution</h2>
+          <p>Overlayed histograms use probability density so cohort sizes are directly comparable.</p>
+        </div>
+        <div id="histogram-plot" class="plotly-chart"></div>
+      </article>
+      <article class="plot-panel">
+        <div>
+          <h2>Summary Shape</h2>
+          <p>Box plots show median, IQR, and outlier spread for the selected metric.</p>
+        </div>
+        <div id="box-plot" class="plotly-chart"></div>
+      </article>
+    </section>
+
+    <section class="table-panel">
+      <div class="section-title">
+        <div>
+          <h2>Summary Statistics</h2>
+          <p>Computed for the current filters.</p>
+        </div>
+      </div>
+      <div class="table-wrap compact">
+        <table>
+          <thead><tr><th>Source</th><th>N</th><th>Mean</th><th>Median</th><th>SD</th><th>IQR</th><th>Min</th><th>Max</th></tr></thead>
+          <tbody id="stats-table"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="table-panel">
+      <div class="section-title">
+        <div>
+          <h2>Case-Level Comparison</h2>
+          <p>Sorted by absolute mean delta for the selected metric.</p>
+        </div>
+        <span id="case-visible-count">0 cases</span>
+      </div>
+      <div class="table-wrap case-table-wrap">
+        <table>
+          <thead>
+            <tr><th>Case</th><th>Repeated N</th><th>Experiment N</th><th>Repeated mean</th><th>Experiment mean</th><th>Delta</th><th>Mean shift</th><th>KS distance</th><th>Overlap</th></tr>
+          </thead>
+          <tbody id="case-table"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="table-panel">
+      <div class="section-title">
+        <div>
+          <h2>Molecule Table</h2>
+          <p>Top 500 rows after filtering, sorted by the selected metric.</p>
+        </div>
+        <span id="molecule-visible-count">0 shown</span>
+      </div>
+      <div class="table-wrap molecule-table-wrap">
+        <table>
+          <thead>
+            <tr><th>Source</th><th>Case</th><th>Index</th><th>Metric</th><th>Vina</th><th>MW</th><th>QED</th><th>SMILES</th><th>SDF</th></tr>
+          </thead>
+          <tbody id="molecule-table"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script type="module" src="./src/comparison.js?v=20260715-comparison-1"></script>
+</body>
+</html>

@@ -6,9 +6,10 @@ const COLORS = {
   accentSoft: "rgba(47, 125, 104, .16)",
 };
 
-export function drawHistogram(canvas, values, label) {
+export function drawHistogram(canvas, values, label, threshold = null) {
   const { ctx, width, height } = prepare(canvas);
   ctx.clearRect(0, 0, width, height);
+  canvas._histogram = null;
   if (!values.length) return;
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -31,42 +32,29 @@ export function drawHistogram(canvas, values, label) {
     ctx.fillStyle = index === counts.indexOf(maxCount) ? COLORS.accent : COLORS.accentSoft;
     ctx.fillRect(pad.left + index * (plotW / bins) + gap / 2, pad.top + plotH - barH, barW, barH);
   });
-}
-
-export function drawScatter(canvas, candidates, selectedIndex) {
-  const { ctx, width, height } = prepare(canvas);
-  ctx.clearRect(0, 0, width, height);
-  if (!candidates.length) return;
-  const xs = candidates.map((item) => item.heavyAtoms);
-  const ys = candidates.map((item) => item.molecularWeight);
-  const minX = Math.min(...xs) - 1;
-  const maxX = Math.max(...xs) + 1;
-  const minY = Math.min(...ys) - 10;
-  const maxY = Math.max(...ys) + 10;
-  const pad = { left: 44, right: 14, top: 16, bottom: 34 };
-  const plotW = width - pad.left - pad.right;
-  const plotH = height - pad.top - pad.bottom;
-  drawAxes(ctx, width, height, pad, minX.toFixed(0), maxX.toFixed(0), "Heavy atoms");
-  candidates.forEach((item) => {
-    const x = pad.left + ((item.heavyAtoms - minX) / (maxX - minX || 1)) * plotW;
-    const y = pad.top + plotH - ((item.molecularWeight - minY) / (maxY - minY || 1)) * plotH;
-    const selected = item.index === selectedIndex;
-    ctx.beginPath();
-    ctx.arc(x, y, selected ? 5 : 3, 0, Math.PI * 2);
-    ctx.fillStyle = selected ? "#c96c46" : "rgba(47, 125, 104, .55)";
-    ctx.fill();
-  });
+  if (threshold !== null && threshold >= min && threshold <= max) {
+    const x = pad.left + ((threshold - min) / (max - min || 1)) * plotW;
+    ctx.strokeStyle = "#b56b36";
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + plotH); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  canvas._histogram = { min, max, counts, pad, plotW, bins };
 }
 
 function prepare(canvas) {
   const ratio = window.devicePixelRatio || 1;
-  const width = canvas.clientWidth;
-  const height = Number(canvas.getAttribute("height")) || 220;
-  canvas.width = width * ratio;
-  canvas.height = height * ratio;
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(Number(canvas.getAttribute("height")) || rect.height || 220));
+  const backingWidth = Math.max(1, Math.round(width * ratio));
+  const backingHeight = Math.max(1, Math.round(height * ratio));
+  if (canvas.width !== backingWidth) canvas.width = backingWidth;
+  if (canvas.height !== backingHeight) canvas.height = backingHeight;
   canvas.style.height = `${height}px`;
   const ctx = canvas.getContext("2d");
-  ctx.scale(ratio, ratio);
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.imageSmoothingEnabled = false;
   return { ctx, width, height };
 }
 

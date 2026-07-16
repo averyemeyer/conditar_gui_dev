@@ -39,10 +39,18 @@ export function parseSdf(text, name = "molecule.sdf") {
   const molecularWeight = atoms.reduce((sum, atom) => sum + (ATOMIC_WEIGHTS[atom.element] || 0), 0);
   const components = connectedComponents(atoms.length, bonds);
   const rings = Math.max(0, bonds.length - atoms.length + components);
+  const properties = parseProperties(lines);
+  const vinaScore = vinaWasRun(properties)
+    ? firstNumericProperty(properties, ["VINA_SCORE_ONLY", "VINA_MINIMIZE", "VINA_DOCK", "QVINA"])
+    : null;
+  const smiles = properties.SMILES || "";
 
   return {
     name,
     text,
+    properties,
+    smiles,
+    vinaScore,
     atoms,
     bonds,
     atomCount: atoms.length,
@@ -52,6 +60,45 @@ export function parseSdf(text, name = "molecule.sdf") {
     rings,
     formula: formulaFromCounts(elementCounts),
   };
+}
+
+// Zero is a valid docking score; only an explicit skipped/not-run status
+// indicates that Vina metrics should be treated as missing.
+export function vinaWasRun(properties = {}) {
+  const status = String(properties.VINA_STATUS || "").trim().toLowerCase();
+  if (status) return status === "ok";
+  const mode = String(properties.VINA_MODE || "").trim().toLowerCase();
+  if (["none", "off", "disabled", "not_run", "not requested"].includes(mode)) return false;
+  return true;
+}
+
+function parseProperties(lines) {
+  const properties = {};
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = lines[i].match(/^>\s*<([^>]+)>/);
+    if (!match) continue;
+    const values = [];
+    i += 1;
+    while (i < lines.length && lines[i] !== "") {
+      values.push(lines[i]);
+      i += 1;
+    }
+    properties[match[1]] = values.join("\n");
+  }
+  return properties;
+}
+
+function numericProperty(properties, key) {
+  const value = Number.parseFloat(properties[key]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function firstNumericProperty(properties, keys) {
+  for (const key of keys) {
+    const value = numericProperty(properties, key);
+    if (value !== null) return value;
+  }
+  return null;
 }
 
 function connectedComponents(atomCount, bonds) {

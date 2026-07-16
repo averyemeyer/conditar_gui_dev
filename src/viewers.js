@@ -34,6 +34,24 @@ export function render3D(container, molecule, receptorText, options = {}) {
 }
 
 export function render2D(container, molecule) {
+  const smiles = molecule.smiles || molecule.properties?.SMILES || "";
+  if (smiles && typeof window.initRDKitModule === "function") {
+    container.innerHTML = "<div class='viewer-loading'>Generating 2D depiction…</div>";
+    window.initRDKitModule().then((RDKit) => {
+      const mol = RDKit.get_mol(smiles);
+      if (!mol) throw new Error("Invalid SMILES");
+      try {
+        container.innerHTML = mol.get_svg(720, 480);
+      } finally {
+        mol.delete();
+      }
+    }).catch(() => renderCoordinate2D(container, molecule));
+    return;
+  }
+  renderCoordinate2D(container, molecule);
+}
+
+function renderCoordinate2D(container, molecule) {
   const width = 720;
   const height = 480;
   const pad = 45;
@@ -55,7 +73,7 @@ export function render2D(container, molecule) {
     if (atom.element === "C" || atom.element === "H") return "";
     return `<g><circle cx="${point.x}" cy="${point.y}" r="12" fill="#f7f9f8"/><text x="${point.x}" y="${point.y + 5}" text-anchor="middle" fill="${ELEMENT_COLORS[atom.element] || "#263632"}">${atom.element}</text></g>`;
   }).join("");
-  container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="2D structure of ${molecule.id}">${bonds}${atoms}</svg>`;
+  container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="2D structure of ${molecule.id}"><rect width="${width}" height="${height}" fill="#f7f9f8"/>${bonds}${atoms}</svg>`;
 }
 
 function bondSvg(a, b, order) {

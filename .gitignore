@@ -3,3 +3,6 @@ __pycache__/
 *.py[cod]
 .venv/
 node_modules/
+job_data/
+conDitar-dev-*.zip
+.conditar-slurm.env
