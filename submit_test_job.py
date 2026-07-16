@@ -26,18 +26,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Submit a tiny conDitar GUI backend test job.")
     parser.add_argument("--url", default="http://127.0.0.1:4173/api/jobs")
     parser.add_argument("--target", choices=["local_cpu", "slurm_gpu"], default="slurm_gpu")
-    parser.add_argument("--examples", default="/path/to/conDitar-dev/examples")
+    parser.add_argument("--pdb", required=True, help="Path to a PDB input file.")
+    parser.add_argument("--sdf", help="Optional path to an SDF ligand input. Required for reference mode.")
+    parser.add_argument("--mode", choices=["reference", "pocket"], default="reference")
     parser.add_argument("--slurm-account", default=os.environ.get("CONDITAR_SLURM_ACCOUNT", ""))
     parser.add_argument("--no-vina", action="store_true")
     args = parser.parse_args()
 
-    examples = Path(args.examples)
+    if args.mode == "reference" and not args.sdf:
+        parser.error("--sdf is required in reference mode.")
+    pdb_path = Path(args.pdb)
+    sdf_path = Path(args.sdf) if args.sdf else None
     payload = {
         "target": args.target,
-        "mode": "reference",
-        "example_id": "4aua-api-test",
-        "pdb": read_text(examples / "4aua" / "4aua_protein.pdb"),
-        "sdf": read_text(examples / "4aua" / "4aua_ligand.sdf"),
+        "mode": args.mode,
+        "example_id": "custom",
+        "pdb": read_text(pdb_path),
+        "sdf": read_text(sdf_path) if sdf_path else None,
         "parameters": {
             "num_samples": 1,
             "batch_size": 1,

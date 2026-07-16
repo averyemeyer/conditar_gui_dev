@@ -14,7 +14,7 @@ conditar_gui_dev
   Starts jobs, tracks logs/status, reads generated SDF outputs
 
 conDitar-dev container
-  Docker/Podman image with conDitar code, dependencies, model files, and sample.py
+  Docker/Podman image with conDitar code, dependencies, model files, and runtime entry point
   Default image name: localhost/conditar-dev:container-dev
 ```
 
@@ -187,7 +187,7 @@ PODMAN_BIN=/path/to/podman CONDITAR_RUNTIME=podman python3 serve.py --open
 ## Using the GUI
 
 1. Choose **Protein + reference ligand** or **Pocket only**.
-2. Select an example dataset or replace the PDB/SDF with custom files.
+2. Upload a PDB file; reference mode also requires an SDF ligand.
 3. Set **Molecules**, **Batch size**, and **Pocket radius**.
 4. Choose **This computer · CPU** or **Slurm GPU · Podman**.
 5. Enable Vina scoring if desired, then review Slurm options when using the GPU target.
