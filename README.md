@@ -29,6 +29,9 @@ Job folders are written under `job_data/jobs/<job-id>/`. That directory is
 ignored by git and contains staged inputs, logs, metadata, generated SDFs, and
 export ZIPs.
 
+To copy this GUI into another conDitar workspace as a folder, see
+[`PORTING.md`](PORTING.md).
+
 ## Local Mac startup
 
 Requirements:
