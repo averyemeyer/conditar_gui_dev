@@ -5,4 +5,5 @@ __pycache__/
 node_modules/
 job_data/
 conDitar-dev-*.zip
+.conditar-cpu.env
 .conditar-slurm.env

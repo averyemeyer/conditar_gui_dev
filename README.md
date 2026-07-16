@@ -75,9 +75,7 @@ slower.
 Start the GUI:
 
 ```bash
-CONDITAR_RUNTIME=docker \
-CONDITAR_DOCKER_IMAGE=localhost/conditar-dev:container-dev \
-python3 serve.py --open
+./start_cpu_gui.sh
 ```
 
 If the browser does not open automatically, visit:
@@ -90,7 +88,7 @@ If port `4173` is already in use, either use the already-running GUI or start on
 a different port:
 
 ```bash
-python3 serve.py --port 4174 --open
+PORT=4174 ./start_cpu_gui.sh
 ```
 
 ## Slurm GPU Startup
@@ -155,12 +153,15 @@ The GUI chooses the container runner from environment variables:
 - `CONDITAR_RUNTIME=podman` for Linux/cluster Podman.
 - `CONDITAR_RUNTIME=auto` to select an available local Docker/Podman runtime.
 
+For local CPU defaults that should not be committed, put environment assignments
+in `.conditar-cpu.env`; `start_cpu_gui.sh` loads it automatically.
+
 Use a different image name:
 
 ```bash
 CONDITAR_DOCKER_IMAGE=my-registry/conditar-dev:tag \
 CONDITAR_RUNTIME=docker \
-python3 serve.py --open
+./start_cpu_gui.sh
 ```
 
 Use a local `conDitar-dev` checkout while keeping the same container
@@ -169,7 +170,7 @@ environment/checkpoints:
 ```bash
 CONDITAR_SOURCE_MOUNT=/path/to/conDitar-dev \
 CONDITAR_RUNTIME=docker \
-python3 serve.py --open
+./start_cpu_gui.sh
 ```
 
 This is useful for source-only conDitar edits. Rebuild the container when
