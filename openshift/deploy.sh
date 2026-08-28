@@ -84,11 +84,6 @@ if ! command -v oc >/dev/null 2>&1; then
   exit 2
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "ERROR: python3 was not found on PATH. Install Python 3, then retry." >&2
-  exit 2
-fi
-
 if ! oc whoami >/dev/null 2>&1; then
   echo "ERROR: oc is not logged in. Run oc login, then retry." >&2
   exit 2
@@ -115,62 +110,88 @@ current_image_ref="${previous_image_ref:-$existing_image_ref}"
 
 cp -R openshift "$tmpdir/openshift"
 
-python3 - "$tmpdir/openshift" "$RUNTIME" "$RUNTIME_IMAGE" "$STORAGE" "$ROUTE_HOST" "$OPENSHIFT_SUBMIT" "$OPENSHIFT_DEVICE" "$OPENSHIFT_GPU_COUNT" "$OPENSHIFT_CPU_REQUEST" "$OPENSHIFT_MEMORY_REQUEST" "$OPENSHIFT_MEMORY_LIMIT" "$current_image_ref" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-root = Path(sys.argv[1])
-(
-    runtime,
-    runtime_image,
-    storage,
-    route_host,
-    openshift_submit,
-    openshift_device,
-    openshift_gpu_count,
-    openshift_cpu_request,
-    openshift_memory_request,
-    openshift_memory_limit,
-    current_image_ref,
-) = sys.argv[2:13]
-
-config = root / "configmap.yaml"
-text = config.read_text()
-replacements = {
-    "CONDITAR_RUNTIME": runtime,
-    "CONDITAR_DOCKER_IMAGE": runtime_image,
-    "CONDITAR_OPENSHIFT_SUBMIT": openshift_submit,
-    "CONDITAR_OPENSHIFT_DEVICE": openshift_device,
-    "CONDITAR_OPENSHIFT_GPU_COUNT": openshift_gpu_count,
-    "CONDITAR_OPENSHIFT_CPU_REQUEST": openshift_cpu_request,
-    "CONDITAR_OPENSHIFT_MEMORY_REQUEST": openshift_memory_request,
-    "CONDITAR_OPENSHIFT_MEMORY_LIMIT": openshift_memory_limit,
+rewrite_file() {
+  local file="$1"
+  local tmp_file="$file.tmp"
+  cat >"$tmp_file"
+  mv "$tmp_file" "$file"
 }
-for key, value in replacements.items():
-    text = re.sub(rf'{key}: ".*"', f'{key}: "{value}"', text)
-config.write_text(text)
 
-pvc = root / "pvc.yaml"
-text = pvc.read_text()
-text = re.sub(r"storage: .*", f"storage: {storage}", text)
-pvc.write_text(text)
+set_config_value() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  awk -v key="$key" -v value="$value" '
+    $1 == key ":" {
+      indent = substr($0, 1, index($0, key) - 1)
+      print indent key ": \"" value "\""
+      next
+    }
+    { print }
+  ' "$file" | rewrite_file "$file"
+}
 
-if route_host:
-    route = root / "route.yaml"
-    text = route.read_text()
-    if re.search(r"\n  host: ", text):
-        text = re.sub(r"\n  host: .*", f"\n  host: {route_host}", text)
-    else:
-        text = text.replace("\nspec:\n", f"\nspec:\n  host: {route_host}\n", 1)
-    route.write_text(text)
+set_plain_value() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  awk -v key="$key" -v value="$value" '
+    $1 == key ":" {
+      indent = substr($0, 1, index($0, key) - 1)
+      print indent key ": " value
+      next
+    }
+    { print }
+  ' "$file" | rewrite_file "$file"
+}
 
-if current_image_ref:
-    deployment = root / "deployment.yaml"
-    text = deployment.read_text()
-    text = re.sub(r"image: conditar-gui:[^\s]+", f"image: {current_image_ref}", text)
-    deployment.write_text(text)
-PY
+insert_route_host() {
+  local file="$1"
+  local host="$2"
+  if grep -Eq '^[[:space:]]*host:' "$file"; then
+    set_plain_value "$file" "host" "$host"
+  else
+    awk -v host="$host" '
+      $1 == "spec:" {
+        print
+        print "  host: " host
+        next
+      }
+      { print }
+    ' "$file" | rewrite_file "$file"
+  fi
+}
+
+set_deployment_image() {
+  local file="$1"
+  local image="$2"
+  awk -v image="$image" '
+    $1 == "image:" && $2 ~ /^conditar-gui:/ {
+      indent = substr($0, 1, index($0, "image") - 1)
+      print indent "image: " image
+      next
+    }
+    { print }
+  ' "$file" | rewrite_file "$file"
+}
+
+set_config_value "$tmpdir/openshift/configmap.yaml" "CONDITAR_RUNTIME" "$RUNTIME"
+set_config_value "$tmpdir/openshift/configmap.yaml" "CONDITAR_DOCKER_IMAGE" "$RUNTIME_IMAGE"
+set_config_value "$tmpdir/openshift/configmap.yaml" "CONDITAR_OPENSHIFT_SUBMIT" "$OPENSHIFT_SUBMIT"
+set_config_value "$tmpdir/openshift/configmap.yaml" "CONDITAR_OPENSHIFT_DEVICE" "$OPENSHIFT_DEVICE"
+set_config_value "$tmpdir/openshift/configmap.yaml" "CONDITAR_OPENSHIFT_GPU_COUNT" "$OPENSHIFT_GPU_COUNT"
+set_config_value "$tmpdir/openshift/configmap.yaml" "CONDITAR_OPENSHIFT_CPU_REQUEST" "$OPENSHIFT_CPU_REQUEST"
+set_config_value "$tmpdir/openshift/configmap.yaml" "CONDITAR_OPENSHIFT_MEMORY_REQUEST" "$OPENSHIFT_MEMORY_REQUEST"
+set_config_value "$tmpdir/openshift/configmap.yaml" "CONDITAR_OPENSHIFT_MEMORY_LIMIT" "$OPENSHIFT_MEMORY_LIMIT"
+set_plain_value "$tmpdir/openshift/pvc.yaml" "storage" "$STORAGE"
+
+if [[ -n "$ROUTE_HOST" ]]; then
+  insert_route_host "$tmpdir/openshift/route.yaml" "$ROUTE_HOST"
+fi
+
+if [[ -n "$current_image_ref" ]]; then
+  set_deployment_image "$tmpdir/openshift/deployment.yaml" "$current_image_ref"
+fi
 
 oc apply -k "$tmpdir/openshift"
 
