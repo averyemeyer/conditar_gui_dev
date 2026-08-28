@@ -44,21 +44,6 @@ on a mounted persistent volume.
 
 ## Quick start
 
-For an OpenShift-hosted GUI, log in with `oc`, then run:
-
-```bash
-git clone https://github.com/ninglab/conDitar-dev.git
-cd conDitar-dev/gui
-./openshift/deploy.sh
-```
-
-The script builds the GUI image inside the current OpenShift project, deploys
-the service, creates persistent storage, and prints the HTTPS Route. See
-[`openshift/README.md`](openshift/README.md) for site deployment options.
-The OpenShift/container image installs the GUI Tool Chest dependencies from
-`environment.yml`, so Lilly Medchem Rules and MedChem filters are available
-without running `setup_tool_chest.sh` inside the pod.
-
 For first-time local CPU setup with Docker or Docker Desktop:
 
 ```bash
@@ -78,6 +63,9 @@ need:
 ```bash
 ./start_cpu_gui.sh
 ```
+
+For OpenShift-hosted deployment, use the dedicated instructions in
+[`openshift/SITE_QUICKSTART.md`](openshift/SITE_QUICKSTART.md).
 
 ## Local CPU startup
 
