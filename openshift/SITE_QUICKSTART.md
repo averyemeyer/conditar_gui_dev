@@ -1,6 +1,6 @@
 # conDitar GUI OpenShift Site Quickstart
 
-This package contains the conDitar GUI plus OpenShift setup files.
+This branch contains the conDitar GUI plus OpenShift setup files.
 
 The simplest path is:
 
@@ -69,21 +69,14 @@ oc version --client
 oc project
 ```
 
-5. Put this release package in the Web Terminal workspace. Common site options
-   are a company-approved file link, an internal Git repository, or an approved
-   automation/import process.
-6. Unzip the package and deploy from the unzipped top-level directory.
-
-If this package is being tested from GitHub, clone the approved branch instead
-of uploading a zip:
+5. Clone the approved repository branch:
 
 ```bash
-git clone --branch openshift-handoff-20260827 https://github.com/averyemeyer/conditar_gui_dev.git
-cd conditar_gui_dev
+git clone --branch <branch-name> <repo-url>
+cd <repo-folder>
 ```
 
-If the site mirrors the code into an internal Git repository, use the internal
-repository URL and branch name instead.
+Use the repository URL and branch name approved for the site environment.
 
 ## Get The OpenShift Command
 
@@ -139,7 +132,7 @@ image-registry.openshift-image-registry.svc:5000/<site-project>/conditar-runtime
 
 ## Fast CPU Validation
 
-Unzip the package and run from the unzipped top-level directory:
+From the cloned repository folder:
 
 In OpenShift Web Terminal:
 
@@ -284,6 +277,5 @@ oc logs job/<job-name>
 ## Files To Review
 
 - `openshift/README.md`: deployment options and object list.
-- `openshift/TRANSFER_CHECKLIST.md`: admin-facing assumptions/questions.
 - `openshift/site.env.example`: tunable environment variables.
 - `openshift/deploy.sh`: deploy/build script.

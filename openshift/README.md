@@ -1,6 +1,6 @@
 # conDitar GUI on OpenShift
 
-This folder is a self-contained OpenShift starter package for the conDitar GUI.
+This folder contains the OpenShift deployment files for the conDitar GUI.
 It builds the GUI image inside the current OpenShift project, deploys the web
 service, creates persistent job storage, exposes a Route, and can launch
 generator pods as OpenShift Jobs.
@@ -40,9 +40,6 @@ When the script finishes, it prints the HTTPS Route for the GUI.
 For a site-facing handoff path, start with
 `openshift/SITE_QUICKSTART.md`.
 
-For a more formal release handoff, start with `openshift/README_SITE.md` and
-use `openshift/package_release.sh` to build a release zip with a checksum.
-
 ## First Click Test
 
 1. Open the printed Route.
@@ -81,7 +78,7 @@ If the project allows the GUI service account to create Jobs, redeploy with:
 ./openshift/deploy.sh --runtime openshift_job --submit
 ```
 
-For CPU-only sandbox testing, use:
+For CPU-only testing, use:
 
 ```bash
 ./openshift/deploy.sh --runtime openshift_job --submit --cpu

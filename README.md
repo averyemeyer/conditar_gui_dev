@@ -9,8 +9,8 @@ inputs, launches conDitar jobs through the container image built from
 The generator, container, and GUI are documented separately:
 
 - [`../README.md`](../README.md) — model, sampling, and repository overview.
-- [`../docker/README.md`](../docker/README.md) — image build, archive transfer,
-  Docker/Podman usage, and container-only runs.
+- [`../docker/README.md`](../docker/README.md) — image build, Docker/Podman
+  usage, and container-only runs.
 
 ![conDitar GUI overview](media/screenshots/gui-overview.png)
 
@@ -208,7 +208,7 @@ build from the local `gui/` folder, deploys the GUI, waits for rollout, and
 prints the Route URL.
 
 Start with `openshift/SITE_QUICKSTART.md` for the site handoff flow and
-`openshift/TRANSFER_CHECKLIST.md` for admin-facing assumptions/questions.
+`openshift/README.md` for deployment options and admin-facing assumptions.
 
 Local container smoke test:
 
@@ -332,20 +332,7 @@ DOCKER_BIN=/path/to/docker ./start_cpu_gui.sh
 PODMAN_BIN=/path/to/podman ./start_slurm_gui.sh
 ```
 
-To copy a shared image archive from a remote cluster to your local machine, run
-`rsync` from your local terminal. Replace the placeholders with your cluster
-username, login host, and archive path:
-
-```bash
-mkdir -p "$HOME/containers"
-rsync -avP \
-  <CLUSTER_USER>@<CLUSTER_LOGIN_HOST>:/path/to/conditar-dev__2026-07-10.tar.gz \
-  "$HOME/containers/"
-docker load -i "$HOME/containers/conditar-dev__2026-07-10.tar.gz"
-```
-
-The archive is large; `rsync -P` resumes an interrupted transfer. Local NVIDIA
-GPU execution additionally requires Docker Desktop GPU support and a compatible
+Local NVIDIA GPU execution requires Docker Desktop GPU support and a compatible
 NVIDIA runtime. For normal GPU throughput, use the Slurm/Podman path.
 
 ## Using the GUI
