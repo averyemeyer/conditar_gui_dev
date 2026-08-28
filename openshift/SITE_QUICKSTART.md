@@ -4,9 +4,10 @@ This package contains the conDitar GUI plus OpenShift setup files.
 
 The simplest path is:
 
-1. Unzip this package.
-2. Open the OpenShift Web Terminal, or use a local terminal with `oc`.
+1. Open the OpenShift Web Terminal.
+2. Clone the approved Git repository.
 3. Put your OpenShift project name into one deploy command and run it.
+4. Open the GUI Route/URL printed by the script.
 
 No Docker Desktop install is required.
 No local Git, Helm, Kustomize, or Docker Desktop install is required if the
@@ -188,6 +189,22 @@ test. Keep the runtime image value unchanged unless your site admin tells you
 Docker Hub pulls are blocked.
 
 The script prints the Route when the deployment is ready.
+
+If the Web Terminal disconnects while the GUI image is building, log back into
+the Web Terminal, return to the repository folder, and finish from the latest
+completed image:
+
+```bash
+cd conditar_gui_dev
+
+./openshift/deploy.sh \
+  --project <site-project> \
+  --runtime openshift_job \
+  --submit \
+  --cpu \
+  --runtime-image docker.io/osuninglab/conditar-dev:2026-07-10 \
+  --skip-build
+```
 
 For a first infrastructure test in the GUI:
 

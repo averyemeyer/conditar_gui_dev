@@ -39,6 +39,7 @@ OPENSHIFT_GPU_COUNT="${CONDITAR_OPENSHIFT_GPU_COUNT:-1}"
 OPENSHIFT_CPU_REQUEST="${CONDITAR_OPENSHIFT_CPU_REQUEST:-2}"
 OPENSHIFT_MEMORY_REQUEST="${CONDITAR_OPENSHIFT_MEMORY_REQUEST:-16Gi}"
 OPENSHIFT_MEMORY_LIMIT="${CONDITAR_OPENSHIFT_MEMORY_LIMIT:-32Gi}"
+BUILD_TIMEOUT_SECONDS="${CONDITAR_OPENSHIFT_BUILD_TIMEOUT_SECONDS:-2400}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -175,6 +176,45 @@ set_deployment_image() {
   ' "$file" | rewrite_file "$file"
 }
 
+wait_for_build() {
+  local build_ref="$1"
+  local phase=""
+  local waited=0
+  local interval=15
+
+  echo "Waiting for $build_ref to complete. This can take about 10 minutes on a fresh OpenShift node."
+  while [[ "$waited" -le "$BUILD_TIMEOUT_SECONDS" ]]; do
+    phase="$(oc get "$build_ref" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+    case "$phase" in
+      Complete)
+        echo "$build_ref completed."
+        return 0
+        ;;
+      Failed|Error|Cancelled)
+        echo "ERROR: $build_ref ended with status: $phase" >&2
+        oc logs "$build_ref" --tail=120 >&2 || true
+        return 1
+        ;;
+      New|Pending|Running)
+        echo "$build_ref status: $phase (${waited}s elapsed)"
+        ;;
+      *)
+        echo "$build_ref status: waiting (${waited}s elapsed)"
+        ;;
+    esac
+    sleep "$interval"
+    waited=$((waited + interval))
+  done
+
+  echo "ERROR: timed out waiting for $build_ref after ${BUILD_TIMEOUT_SECONDS}s." >&2
+  echo "The build may still be running. Check it with:" >&2
+  echo "  oc get builds" >&2
+  echo "  oc logs $build_ref --tail=120" >&2
+  echo "If it later completes, finish deployment with:" >&2
+  echo "  ./openshift/deploy.sh --project $PROJECT_NAME --runtime $RUNTIME --submit --cpu --runtime-image $RUNTIME_IMAGE --skip-build" >&2
+  return 1
+}
+
 set_config_value "$tmpdir/openshift/configmap.yaml" "CONDITAR_RUNTIME" "$RUNTIME"
 set_config_value "$tmpdir/openshift/configmap.yaml" "CONDITAR_DOCKER_IMAGE" "$RUNTIME_IMAGE"
 set_config_value "$tmpdir/openshift/configmap.yaml" "CONDITAR_OPENSHIFT_SUBMIT" "$OPENSHIFT_SUBMIT"
@@ -197,7 +237,9 @@ oc apply -k "$tmpdir/openshift"
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   echo "Starting OpenShift binary build from $(pwd)"
-  if ! oc start-build conditar-gui --from-dir=. --follow --wait; then
+  build_ref="$(oc start-build conditar-gui --from-dir=. -o name)"
+  echo "Started $build_ref"
+  if ! wait_for_build "$build_ref"; then
     if [[ -n "$previous_image_ref" ]]; then
       echo "Build failed; restoring previous GUI image."
       oc set image deployment/conditar-gui "gui=$previous_image_ref" >/dev/null || true
