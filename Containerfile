@@ -14,7 +14,6 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
-        git \
         make \
         ruby \
         zlib1g-dev \
@@ -29,11 +28,11 @@ ENV CONDA_DEFAULT_ENV=conditar-gui-dev \
     PATH=/opt/conda/envs/conditar-gui-dev/bin:$PATH
 
 USER root
-RUN git clone --depth 1 https://github.com/IanAWatson/Lilly-Medchem-Rules.git /opt/conditar-gui/.tool_chest/Lilly-Medchem-Rules \
-    && make -C /opt/conditar-gui/.tool_chest/Lilly-Medchem-Rules \
+COPY vendor/Lilly-Medchem-Rules /opt/conditar-gui/.tool_chest/Lilly-Medchem-Rules
+RUN make -C /opt/conditar-gui/.tool_chest/Lilly-Medchem-Rules \
     && mkdir -p /data/jobs \
-    && chown -R $MAMBA_USER:0 /data /opt/conda /opt/conditar-gui \
-    && chmod -R g=u /data /opt/conda /opt/conditar-gui
+    && chown -R $MAMBA_USER:0 /data /opt/conditar-gui \
+    && chmod -R g=u /data /opt/conditar-gui
 
 USER $MAMBA_USER
 COPY --chown=$MAMBA_USER:0 . /opt/conditar-gui

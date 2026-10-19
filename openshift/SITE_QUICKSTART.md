@@ -47,8 +47,20 @@ The validated path is:
   - `Pod/log` reads
 - A conDitar runtime image available to the project.
 
-If the site cannot run OpenShift binary builds, build/push the GUI image in
-their preferred registry first, then use the manifests as the deployment shape.
+If the site cannot run OpenShift binary builds, build and push the GUI image to
+an approved registry first, then deploy with `--gui-image`.
+
+The GUI image can be built from a workstation or CI runner with Docker or
+Podman:
+
+```bash
+./openshift/build_gui_image.sh \
+  --image docker.io/osuninglab/conditar-gui:<site-version> \
+  --push
+```
+
+If the site uses an internal registry, mirror that image there and use the
+internal image reference in the deploy command.
 
 ## Preferred Path: OpenShift Web Terminal
 
@@ -130,7 +142,33 @@ image into a registry the project can access. In that case, replace
 image-registry.openshift-image-registry.svc:5000/<site-project>/conditar-runtime:2026-07-10
 ```
 
-## Fast CPU Validation
+## Fast CPU Validation With A Prebuilt GUI Image
+
+Use this path when a GUI image is already available from a registry your
+OpenShift project can pull from. It skips the OpenShift build step.
+
+From the cloned repository folder:
+
+```bash
+oc project <site-project>
+
+./openshift/deploy.sh \
+  --project <site-project> \
+  --runtime openshift_job \
+  --submit \
+  --cpu \
+  --gui-image <site-conditar-gui-image> \
+  --runtime-image docker.io/osuninglab/conditar-dev:2026-07-10
+```
+
+Replace `<site-project>` with your OpenShift project name. Replace
+`<site-conditar-gui-image>` with the GUI image approved for your environment.
+Keep the runtime image unchanged unless your site admin gives you an internal
+mirror for the runtime image.
+
+The script prints the Route when the deployment is ready.
+
+## Fast CPU Validation With OpenShift Build
 
 From the cloned repository folder:
 
@@ -188,7 +226,7 @@ the Web Terminal, return to the repository folder, and finish from the latest
 completed image:
 
 ```bash
-cd conditar_gui_dev
+cd ~/conDitar-dev/gui
 
 ./openshift/deploy.sh \
   --project <site-project> \
@@ -268,9 +306,9 @@ oc logs job/<job-name>
   minutes.
 - Long `oc logs -f` sessions can drop if local credentials expire or the network
   resets; this does not imply the OpenShift Job failed.
-- Standalone Lilly Medchem Rules is built into the GUI image. The MedChem
-  package's internal Lilly demerit subfilter may need additional package-level
-  binary discovery wiring if that exact subfilter is required.
+- Lilly Medchem Rules is vendored under `gui/vendor/` and built into the GUI
+  image without cloning that external repository during the OpenShift build.
+- MedChem filters are installed through the GUI conda environment.
 - Final production values still need site confirmation for storage class,
   route/TLS policy, image registry, GPU resource name, and build policy.
 
