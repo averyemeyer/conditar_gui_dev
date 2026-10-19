@@ -1,8 +1,20 @@
 import { ADVANCED_PARAMETERS, EXAMPLES, PARAMETERS } from "./config.js?v=20260723-theme-1";
 import { drawCategoryChart, drawHistogram } from "./charts.js?v=20260723-theme-1";
-import { ExampleDataService } from "./data-service.js?v=20260723-theme-1";
+import { ExampleDataService } from "./data-service.js?v=20260723-results-fix-1";
 import { vinaWasRun } from "./sdf.js?v=20260723-theme-1";
-import { render2D, render3D } from "./viewers.js?v=20260723-theme-1";
+import { closeExpandedViewer, render2D, render3D } from "./viewers.js?v=20261002-viewer-overlay-1";
+import {
+  CHEMISTRY_METRICS as WORKFLOW_CHEMISTRY_METRICS,
+  VINA_METRICS as WORKFLOW_VINA_METRICS,
+  filterMetricsForWorkflow,
+  normalizeWorkflowWarning,
+  requiredInputs,
+  resolveGenerationWorkflow,
+  setupWarningsForWorkflow,
+  validateGenerationSetup,
+  vinaModeForMetrics,
+  warningText,
+} from "./workflow-rules.js?v=20260930-evaluation-contract-1";
 
 const service = new ExampleDataService();
 const ACTIVE_JOB_STATUSES = new Set(["queued", "running"]);
@@ -14,16 +26,46 @@ const SLURM_GPU_TARGET = "slurm_gpu";
 const LEGACY_SLURM_GPU_TARGET = "osc_gpu";
 const MAX_CATEGORICAL_FILTER_VALUES = 24;
 const THEME_STORAGE_KEY = "conditar-theme";
+const VINA_EVALUATIONS = WORKFLOW_VINA_METRICS;
+const CHEMISTRY_EVALUATIONS = WORKFLOW_CHEMISTRY_METRICS;
+const DIFFSMOL_SHAPE_HEAVY_ATOM_WARNING = 35;
+const DEFAULT_BUILTIN_EVALUATIONS = new Set(["vina_score", "qed", "sa", "logp", "lipinski"]);
+const EVALUATION_LABELS = {
+  vina_score: "Vina score + minimize",
+  vina_dock: "Vina redock",
+  qvina: "QVina",
+  qed: "QED",
+  sa: "SA",
+  logp: "LogP",
+  lipinski: "Lipinski",
+};
 
 const state = {
   study: null,
   selected: null,
   exampleId: "custom",
+  engine: "conditar",
   mode: "reference",
   view: "3d",
+  showReferenceLigand: false,
+  workspaceViewerMolecule: "selected",
   parameters: Object.fromEntries([...PARAMETERS, ...ADVANCED_PARAMETERS].map((item) => [item.key, item.value])),
   customPdb: null,
   customSdf: null,
+  preprocessComplex: null,
+  preprocessComplexResult: null,
+  preprocessComplexResultSignature: null,
+  preprocessTarget: null,
+  preparedStructures: [],
+  selectedPreparedStructureId: null,
+  stagedPreparedStructureId: null,
+  stagedPreparedVariantId: null,
+  stagedPreprocessManifest: null,
+  preprocessProtein: null,
+  preprocessPanel: null,
+  vinaPocketResult: null,
+  vinaPocketResultSignature: null,
+  selectedVinaPocketId: null,
   batchInputs: [],
   currentJob: null,
   selectedJob: null,
@@ -51,7 +93,7 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 function initialize() {
   initializeTheme();
-  const commonKeys = new Set(["num_samples", "pocket_radius"]);
+  const commonKeys = new Set(["num_samples", "pocket_radius", "diffsmol_guidance"]);
   renderParameterFields(PARAMETERS.filter((parameter) => commonKeys.has(parameter.key)), $("#parameter-fields"));
   renderParameterFields(
     [...PARAMETERS.filter((parameter) => !commonKeys.has(parameter.key)), ...ADVANCED_PARAMETERS],
@@ -59,17 +101,20 @@ function initialize() {
   );
   bindEvents();
   setMode("reference", false);
+  updateEngineControls();
   updateInputLabels(null);
-  updateCommand();
+  updateRunSummary();
   refreshJobs(false);
-  setActiveTab("setup");
+  setActiveTab("preprocess");
 }
 
 function renderParameterFields(parameters, container) {
   container.innerHTML = parameters.map((parameter) => {
     const control = parameter.type === "select"
       ? `<select id="param-${parameter.key}">${parameter.options.map((option) => `<option ${option === parameter.value ? "selected" : ""}>${option}</option>`).join("")}</select>`
-      : `<input id="param-${parameter.key}" type="${parameter.type}" value="${parameter.value}" ${parameter.min !== undefined ? `min="${parameter.min}"` : ""} ${parameter.max !== undefined ? `max="${parameter.max}"` : ""} ${parameter.step ? `step="${parameter.step}"` : ""}>`;
+      : parameter.type === "checkbox"
+        ? `<input id="param-${parameter.key}" type="checkbox" ${parameter.value ? "checked" : ""}>`
+        : `<input id="param-${parameter.key}" type="${parameter.type}" value="${parameter.value}" ${parameter.min !== undefined ? `min="${parameter.min}"` : ""} ${parameter.max !== undefined ? `max="${parameter.max}"` : ""} ${parameter.step ? `step="${parameter.step}"` : ""}>`;
     return `<div class="parameter-field" data-parameter-key="${escapeHtml(parameter.key)}"><label for="param-${parameter.key}">${parameter.label}${tooltip(parameter.tooltip)}${parameter.suffix ? `<span>${parameter.suffix}</span>` : ""}</label>${control}<small>${parameter.help || ""}</small></div>`;
   }).join("");
 }
@@ -95,13 +140,19 @@ function bindEvents() {
     }
     loadExample(event.target.value);
   });
+  $$(".engine-option").forEach((button) => button.addEventListener("click", () => setEngine(button.dataset.engine)));
   $$(".mode-toggle button").forEach((button) => button.addEventListener("click", () => setMode(button.dataset.mode)));
   $$(".view-toggle button").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
+  $("#viewer-reference-toggle").addEventListener("change", (event) => {
+    state.showReferenceLigand = event.target.checked;
+    renderSelectedStructure();
+  });
   $$(".workflow-step").forEach((button) => button.addEventListener("click", () => setActiveTab(button.dataset.section)));
   [...PARAMETERS, ...ADVANCED_PARAMETERS].forEach((parameter) => {
     $(`#param-${parameter.key}`).addEventListener("input", (event) => {
-      state.parameters[parameter.key] = parameter.type === "number" ? Number(event.target.value) : event.target.value;
-      updateCommand();
+      state.parameters[parameter.key] = parameter.type === "number" ? Number(event.target.value) : parameter.type === "checkbox" ? event.target.checked : event.target.value;
+      updateEngineControls();
+      updateRunSummary();
     });
   });
   $("#reset-params").addEventListener("click", resetParameters);
@@ -117,9 +168,34 @@ function bindEvents() {
   });
   $("#refresh-pdb").addEventListener("click", () => chooseFileAgain("#pdb-input"));
   $("#refresh-sdf").addEventListener("click", () => chooseFileAgain("#sdf-input"));
+  $("#preprocess-refresh-complex").addEventListener("click", () => chooseFileAgain("#preprocess-complex-input"));
+  $("#preprocess-refresh-target").addEventListener("click", () => chooseFileAgain("#preprocess-target-input"));
+  $("#preprocess-target-input").addEventListener("change", handlePreprocessTargetUpload);
+  $("#preprocess-preview-residue-pocket").addEventListener("click", previewResiduePocket);
+  $("#preprocess-build-residue-pocket").addEventListener("click", buildResiduePocket);
+  $("#preprocess-complex-input").addEventListener("change", handlePreprocessComplexUpload);
+  $("#preprocess-apply-ligand").addEventListener("click", applyPreprocessSelectedLigand);
+  $("#preprocess-complex-radius").addEventListener("input", renderPreparedStructureTray);
+  $("#preprocess-preview-reference").addEventListener("click", () => previewPreprocessedComplexVariant("reference"));
+  $("#preprocess-preview-ligand").addEventListener("click", () => previewPreprocessedComplexVariant("shape"));
+  $("#preprocess-preview-pocket").addEventListener("click", () => previewPreprocessedComplexVariant("pocket"));
+  $("#preprocess-download-complex").addEventListener("click", downloadPreprocessedComplex);
+  $("#preprocess-use-reference").addEventListener("click", () => usePreprocessedComplex("reference"));
+  $("#preprocess-use-ligand").addEventListener("click", () => usePreprocessedComplex("shape"));
+  $("#preprocess-use-pocket").addEventListener("click", () => usePreprocessedComplex("pocket"));
+  $("#preprocess-refresh-protein").addEventListener("click", () => chooseFileAgain("#preprocess-protein-input"));
+  $("#preprocess-protein-input").addEventListener("change", handlePreprocessProteinUpload);
+  $("#preprocess-refresh-panel").addEventListener("click", () => chooseFileAgain("#preprocess-panel-input"));
+  $("#preprocess-panel-input").addEventListener("change", handlePreprocessPanelUpload);
+  $("#preprocess-run-vina-panel").addEventListener("click", runVinaPanelPreprocessing);
+  $("#preprocess-download-vina-pocket").addEventListener("click", downloadSelectedVinaPocket);
+  $("#preprocess-use-vina-pocket").addEventListener("click", useSelectedVinaPocket);
   $$(".builtin-evaluation-toggle").forEach((input) => input.addEventListener("change", updateVinaControls));
   ["#vina-exhaustiveness", "#vina-cpu"].forEach((selector) => {
-    $(selector).addEventListener("input", updateCommand);
+    $(selector).addEventListener("input", updateRunSummary);
+  });
+  ["#vina-panel-center-x", "#vina-panel-center-y", "#vina-panel-center-z", "#vina-panel-size-x", "#vina-panel-size-y", "#vina-panel-size-z", "#vina-panel-max-ligands", "#vina-panel-exhaustiveness"].forEach((selector) => {
+    $(selector).addEventListener("input", renderPreparedStructureTray);
   });
   $("#refresh-jobs").addEventListener("click", () => refreshJobs(true));
   $("#job-filter").addEventListener("change", (event) => {
@@ -144,8 +220,15 @@ function bindEvents() {
   $(".analytics-details").addEventListener("toggle", (event) => {
     if (event.target.open) requestAnimationFrame(renderCharts);
   });
-  $("#protein-style").addEventListener("change", renderSelectedStructure);
-  $("#ligand-style").addEventListener("change", renderSelectedStructure);
+  $("#viewer-molecule-select").addEventListener("change", (event) => {
+    state.workspaceViewerMolecule = event.target.value;
+    renderMoleculeViewerWorkspace();
+  });
+  $("#viewer-use-selected").addEventListener("click", () => {
+    state.workspaceViewerMolecule = "selected";
+    $("#viewer-molecule-select").value = "selected";
+    renderMoleculeViewerWorkspace();
+  });
   $("#download-selected").addEventListener("click", downloadSelected);
   $("#download-csv").addEventListener("click", downloadCsv);
   $("#download-config").addEventListener("click", downloadConfig);
@@ -157,6 +240,8 @@ function bindEvents() {
   $("#theme-toggle").addEventListener("click", toggleTheme);
   $("#pdb-input").addEventListener("change", handlePdbUpload);
   $("#sdf-input").addEventListener("change", handleSdfUpload);
+  $("#pdb-input").addEventListener("click", clearFileInputBeforeChoose);
+  $("#sdf-input").addEventListener("click", clearFileInputBeforeChoose);
   $("#folder-input").addEventListener("change", handleFolderUpload);
   $("#clear-batch").addEventListener("click", clearBatchSelection);
   window.addEventListener("resize", debounce(renderCharts, 120));
@@ -230,8 +315,9 @@ function renderRuntimeStatus(health) {
   // Slurm tasks can load the image from the configured shared archive on the
   // compute node; it does not need to be pre-loaded in the GUI host's image
   // store.
-  const archiveReady = Boolean(health.container_archive?.exists);
-  const imageReady = Boolean(health.container_image?.exists) || (isSlurmGpu && archiveReady);
+  const image = state.engine === "diffsmol" ? health.diffsmol_image : health.container_image;
+  const archiveReady = Boolean((state.engine === "diffsmol" ? health.diffsmol_archive : health.container_archive)?.exists);
+  const imageReady = Boolean(image?.exists) || (isSlurmGpu && archiveReady);
   if (isOpenShift) {
     status.textContent = `${targetLabel({ target })} available`;
     detail.textContent = isOpenShiftJobTarget(target)
@@ -243,8 +329,8 @@ function renderRuntimeStatus(health) {
   }
   status.textContent = isSlurmGpu ? (slurmAvailable ? "Slurm GPU available" : "Slurm setup needs attention") : imageReady ? "Local CPU available" : "Local setup needs attention";
   detail.textContent = isSlurmGpu
-    ? `${slurm}; ${health.container_image?.exists ? "container image found" : archiveReady ? "shared container archive ready" : "container image not confirmed"}. Selected target: Slurm GPU.`
-    : `${imageReady ? "container image found" : "container image missing"}. Selected target: Local CPU.`;
+    ? `${slurm}; ${image?.exists ? "container image found" : archiveReady ? "shared container archive ready" : "container image not confirmed"}. Selected target: Slurm GPU.`
+    : `${state.engine === "diffsmol" ? "DiffSMol" : "conDitar"} ${imageReady ? "image found" : "image missing"}. Selected target: Local CPU.`;
 }
 
 function openShiftSubmissionEnabled(health = state.runtimeHealth) {
@@ -252,7 +338,11 @@ function openShiftSubmissionEnabled(health = state.runtimeHealth) {
 }
 
 function openShiftJobLabel(health = state.runtimeHealth) {
-  return openShiftSubmissionEnabled(health) ? "OpenShift Job" : "OpenShift Job manifest";
+  const device = health?.environment?.openshift_device || "cpu";
+  const resource = device.startsWith("cuda:") ? "GPU" : "CPU";
+  return openShiftSubmissionEnabled(health)
+    ? `OpenShift Job · ${resource}`
+    : `OpenShift Job manifest · ${resource}`;
 }
 
 function updateTargetOptionLabels(health = state.runtimeHealth) {
@@ -305,7 +395,17 @@ function renderSetupHealth(health, error = null) {
 function targetAwareHealthChecks(health) {
   const target = resolvedTarget();
   const isSlurmGpu = isSlurmGpuTarget(target);
-  const checks = (health?.checks || []).map((check) => ({ ...check }));
+  const checks = (health?.checks || []).map((check) => {
+    if (check.id !== "container_image" || state.engine !== "diffsmol") return { ...check };
+    const image = health.diffsmol_image;
+    return {
+      ...check,
+      label: "DiffSMol image",
+      status: image?.exists ? "ok" : "fail",
+      detail: image?.detail || `Image not found: ${health.diffsmol_image_name || "configured DiffSMol image"}`,
+      action: image?.exists ? "" : "Load or build the DiffSMol image, then check again.",
+    };
+  });
   if (isOpenShiftTarget(target)) {
     const ids = isOpenShiftJobTarget(target)
       ? ["python", "job_storage", "openshift_job", "tool_chest"]
@@ -316,7 +416,8 @@ function targetAwareHealthChecks(health) {
     return checks.filter((check) => !["slurm", "openshift_mock", "openshift_job"].includes(check.id));
   }
   return checks.filter((check) => !["openshift_mock", "openshift_job"].includes(check.id)).map((check) => {
-    if (check.id === "container_image" && check.status !== "ok" && health?.container_archive?.exists) {
+    const archive = state.engine === "diffsmol" ? health?.diffsmol_archive : health?.container_archive;
+    if (check.id === "container_image" && check.status !== "ok" && archive?.exists) {
       return {
         ...check,
         status: "ok",
@@ -344,7 +445,12 @@ function chooseFileAgain(selector) {
   input.click();
 }
 
+function clearFileInputBeforeChoose(event) {
+  event.currentTarget.value = "";
+}
+
 async function setActiveTab(tab) {
+  closeExpandedViewer();
   state.activeTab = tab;
   $$(".workflow-step").forEach((button) => button.classList.toggle("active", button.dataset.section === tab));
   $$(".workspace-section").forEach((section) => {
@@ -357,6 +463,9 @@ async function setActiveTab(tab) {
     renderCharts();
     renderSelectedStructure();
   }
+  if (tab === "viewer") {
+    renderMoleculeViewerWorkspace();
+  }
 }
 
 async function loadExample(exampleId) {
@@ -364,6 +473,8 @@ async function loadExample(exampleId) {
   state.exampleId = exampleId;
   state.customPdb = null;
   state.customSdf = null;
+  state.stagedPreprocessManifest = null;
+  renderSetupPreprocessSummary();
   state.batchInputs = [];
   updateCustomOptionLabel("");
   updateBatchLabel();
@@ -383,6 +494,7 @@ async function loadExample(exampleId) {
     state.study = await service.loadStudy(exampleId, (loaded, total) => {
       $("#hero-status").textContent = `${Math.round((loaded / total) * 100)}%`;
     });
+    state.showReferenceLigand = false;
     state.selected = state.study.candidates[0] || null;
     state.exportSelection = new Set();
     state.exportFilters = {};
@@ -400,11 +512,14 @@ async function loadExample(exampleId) {
 }
 
 function setMode(mode, updateSelect = true) {
+  if (state.engine === "diffsmol") mode = "reference";
   state.mode = mode;
   $$(".mode-toggle button").forEach((button) => button.classList.toggle("active", button.dataset.mode === mode));
-  $("#sdf-dropzone").hidden = mode === "pocket";
+  $("#sdf-dropzone").hidden = mode === "pocket" && state.engine !== "diffsmol";
   const pocketRadiusField = $("[data-parameter-key='pocket_radius']");
-  if (pocketRadiusField) pocketRadiusField.hidden = mode === "pocket";
+  if (pocketRadiusField) pocketRadiusField.hidden = state.engine === "diffsmol" || mode === "pocket";
+  const guidanceField = $("[data-parameter-key='diffsmol_guidance']");
+  if (guidanceField) guidanceField.hidden = state.engine !== "diffsmol";
   $("#mode-note").textContent = mode === "reference"
     ? "The reference ligand defines the generation center. Pocket radius controls the surrounding protein context."
     : "The prepared pocket PDB supplies the generation region without a reference ligand.";
@@ -420,7 +535,11 @@ function setMode(mode, updateSelect = true) {
     }
     $("#example-select").value = "custom";
   }
-  updateCommand();
+  if (state.engine === "diffsmol") {
+    $("#mode-note").textContent = "DiffSMol uses a 3D reference ligand SDF; add a pocket PDB for pocket-conditioned generation.";
+    $("#hero-input-mode").textContent = "Shape";
+  }
+  updateRunSummary();
 }
 
 function updateInputLabels(example) {
@@ -428,6 +547,61 @@ function updateInputLabels(example) {
   $("#pdb-detail").textContent = example ? `${example.pdbRecords} · bundled input` : "Required · uploaded with this job";
   $("#sdf-name").textContent = example?.sdf ? example.sdf.split("/").pop() : "Choose a reference SDF";
   $("#sdf-detail").textContent = example?.sdf ? "Reference ligand · bundled input" : "Required for protein + ligand mode";
+}
+
+function clearLoadedStudyForCustomInput() {
+  if (!state.study && !state.selected) return;
+  state.study = null;
+  state.selected = null;
+  state.exportSelection = new Set();
+  state.exportFilters = {};
+  state.resultSource = "upload";
+  renderExportFilters();
+  renderResultsTable();
+}
+
+function setupStudyInput() {
+  return state.resultSource === "example" ? state.study : null;
+}
+
+function setupPdbInput(inputOverride = null) {
+  if (inputOverride) return inputOverride.pdb || null;
+  const study = setupStudyInput();
+  return state.customPdb || (study?.pdbText ? {
+    name: study.example?.pdb?.split("/").pop() || "input.pdb",
+    text: study.pdbText,
+  } : null);
+}
+
+function setupSdfInput(inputOverride = null) {
+  if (inputOverride) return inputOverride.sdf || null;
+  const study = setupStudyInput();
+  return state.customSdf || (study?.referenceSdf ? {
+    name: study.example?.sdf?.split("/").pop() || "reference.sdf",
+    text: study.referenceSdf,
+  } : null);
+}
+
+function currentGenerationInput(inputOverride = null) {
+  const engine = state.engine === "diffsmol" ? "diffsmol" : "conditar";
+  const mode = engine === "diffsmol" ? "reference" : state.mode;
+  const pdb = setupPdbInput(inputOverride);
+  const sdf = engine === "diffsmol" || mode === "reference"
+    ? setupSdfInput(inputOverride)
+    : null;
+  const workflow = resolveGenerationWorkflow({ engine, mode, pdb, sdf });
+  return {
+    engine,
+    mode,
+    workflow,
+    pdb,
+    sdf,
+    hasPdb: Boolean(pdb?.text),
+    hasSdf: Boolean(sdf?.text),
+    batchCount: state.batchInputs.length,
+    inputName: inputOverride?.name || (engine === "diffsmol" ? sdf?.name : pdb?.name) || state.exampleId,
+    preprocess: inputOverride ? null : state.stagedPreprocessManifest,
+  };
 }
 
 function renderStudy() {
@@ -439,13 +613,80 @@ function renderStudy() {
   renderResultsTable();
   renderCharts();
   renderSelectedStructure();
+  renderViewerSelectors();
   updateResultsSource();
-  updateCommand();
+  updateRunSummary();
+}
+
+function setEngine(engine) {
+  state.engine = engine === "diffsmol" ? "diffsmol" : "conditar";
+  if (state.engine === "diffsmol" && state.mode !== "reference") {
+    setMode("reference", false);
+  }
+  updateEngineControls();
+  if (state.runtimeHealth) {
+    renderRuntimeStatus(state.runtimeHealth);
+    renderSetupHealth(state.runtimeHealth);
+  }
+  updateVinaControls();
+  updateRunSummary();
+}
+
+function updateEngineControls() {
+  const isDiffSmol = state.engine === "diffsmol";
+  const generationInput = currentGenerationInput();
+  const requirements = requiredInputs(state.engine, state.mode, generationInput);
+  const hasPocketContext = generationInput.workflow.id === "diffsmol_pocket";
+  document.body.classList.toggle("diffsmol-engine", isDiffSmol);
+  $$(".engine-option").forEach((button) => button.classList.toggle("active", button.dataset.engine === state.engine));
+  $(".mode-toggle")?.classList.toggle("is-disabled", isDiffSmol);
+  $("#pdb-dropzone").hidden = false;
+  $("#sdf-dropzone").hidden = state.mode === "pocket" && !isDiffSmol;
+  $("#pdb-detail").textContent = isDiffSmol
+    ? (hasPocketContext ? "Pocket-conditioned generation will use this pocket" : "Optional: add a pocket PDB for pocket-conditioned generation")
+    : "Required · uploaded with this job";
+  $("#sdf-detail").textContent = isDiffSmol
+    ? "Required 3D reference ligand for shape expansion"
+    : (state.customSdf ? "Reference ligand · local upload" : "Required for protein + ligand mode");
+  const guidanceField = $("[data-parameter-key='diffsmol_guidance']");
+  if (guidanceField) guidanceField.hidden = !isDiffSmol;
+  const pocketRadiusField = $("[data-parameter-key='pocket_radius']");
+  if (pocketRadiusField) pocketRadiusField.hidden = isDiffSmol || state.mode === "pocket";
+  const batchSizeField = $("[data-parameter-key='batch_size']");
+  if (batchSizeField) batchSizeField.querySelector("small").textContent = isDiffSmol
+    ? "Samples processed per DiffSMol batch"
+    : "Samples processed per conDitar batch";
+  const headingLabel = $(".input-panel .required-label");
+  if (headingLabel) {
+    headingLabel.textContent = requirements.sdf === "required" && requirements.pdb === "required"
+      ? "PDB + SDF required"
+      : requirements.sdf === "required"
+      ? "SDF required"
+      : "PDB required";
+  }
+  if (isDiffSmol) {
+    $("#mode-note").textContent = hasPocketContext
+      ? "DiffSMol will run pocket-conditioned generation from the attached pocket and 3D ligand shape."
+      : "DiffSMol ligand-only mode will not produce reliable docking scores. Attach a pocket PDB if you want pocket-conditioned generation and Vina/QVina post-processing.";
+    $("#hero-input-mode").textContent = hasPocketContext ? "Shape + Pocket" : "Ligand Shape";
+  } else {
+    setMode(state.mode, false);
+  }
+  updateBuiltinEvaluationAvailability();
+  updateBatchLabel();
 }
 
 async function submitGenerationJob() {
-  if (!state.batchInputs.length && !state.study && !state.customPdb) {
-    showToast("Load or upload a PDB before submitting a job.");
+  if (shouldTreatCurrentInputAsDiffSmol()) {
+    setEngine("diffsmol");
+    showToast("SDF-only input selected; using DiffSMol shape generation.");
+  }
+  const validation = validateGenerationSetup({
+    ...currentGenerationInput(),
+    batchCount: state.batchInputs.length,
+  });
+  if (!validation.ready) {
+    showToast(validation.errors[0]);
     return;
   }
   const button = $("#preview-run");
@@ -461,6 +702,7 @@ async function submitGenerationJob() {
     const job = response.jobs[0];
     state.currentJob = job;
     state.selectedJob = job;
+    if (response.jobs.some((item) => item.status !== "failed")) resetEvaluationSelections();
     const failedJobs = response.jobs.filter((item) => item.status === "failed");
     const queuedJobs = response.jobs.length - failedJobs.length;
     const message = failedJobs.length
@@ -485,32 +727,33 @@ async function submitGenerationJob() {
   }
 }
 
+function shouldTreatCurrentInputAsDiffSmol() {
+  return state.engine !== "diffsmol"
+    && !state.batchInputs.length
+    && Boolean(setupSdfInput())
+    && !setupPdbInput();
+}
+
 function buildJobPayload(inputOverride = null) {
-  const example = EXAMPLES[state.exampleId];
-  const pdb = inputOverride?.pdb || state.customPdb || (state.study?.pdbText ? {
-    name: example?.pdb.split("/").pop() || "input.pdb",
-    text: state.study.pdbText,
-  } : null);
-  const sdf = state.mode === "reference"
-    ? (inputOverride?.sdf || state.customSdf || (state.study?.referenceSdf ? {
-      name: example?.sdf?.split("/").pop() || "reference.sdf",
-      text: state.study.referenceSdf,
-    } : null))
-    : null;
+  const generationInput = currentGenerationInput(inputOverride);
   return {
+    engine: generationInput.engine,
     target: resolvedTarget(),
-    mode: state.mode,
+    mode: generationInput.mode,
     example_id: state.exampleId,
-    input_name: inputOverride?.name || pdb?.name || state.exampleId,
+    input_name: generationInput.inputName,
     email: $("#job-email").disabled ? "" : $("#job-email").value.trim(),
-    pdb,
-    sdf,
+    pdb: generationInput.pdb,
+    sdf: generationInput.sdf,
+    preprocess: generationInput.preprocess,
     slurm: buildSlurmPayload(),
-    postprocess: buildPostprocessPayload(),
+    postprocess: buildPostprocessPayload(inputOverride),
     tools: buildEvaluationToolsPayload(),
     parameters: {
       ...state.parameters,
-      device: isSlurmGpuTarget(resolvedTarget()) || isOpenShiftJobTarget(resolvedTarget()) ? "cuda:0" : "cpu",
+      device: isOpenShiftJobTarget(resolvedTarget())
+        ? (state.runtimeHealth?.environment?.openshift_device || "cpu")
+        : isSlurmGpuTarget(resolvedTarget()) ? "cuda:0" : "cpu",
     },
   };
 }
@@ -532,11 +775,14 @@ function buildSlurmPayload() {
   };
 }
 
-function buildPostprocessPayload() {
-  const selected = selectedBuiltinEvaluations();
+function buildPostprocessPayload(inputOverride = null) {
+  const generationInput = currentGenerationInput(inputOverride);
+  let selected = selectedBuiltinEvaluations({ includeDisabled: true });
+  selected = filterMetricsForWorkflow(selected, generationInput.workflow);
+  const vinaMode = selectedVinaMode(selected);
   return {
-    vina: selected.length > 0,
-    vina_mode: selectedVinaMode(selected),
+    vina: vinaMode !== "none",
+    vina_mode: vinaMode,
     vina_exhaustiveness: $("#vina-exhaustiveness").value,
     vina_cpu: $("#vina-cpu").value,
     metrics: selected,
@@ -550,20 +796,43 @@ function buildEvaluationToolsPayload() {
   }));
 }
 
-function selectedBuiltinEvaluations() {
-  return $$(".builtin-evaluation-toggle:checked").map((input) => input.value);
+function selectedBuiltinEvaluations(options = {}) {
+  const selector = options.includeDisabled ? ".builtin-evaluation-toggle:checked" : ".builtin-evaluation-toggle:checked:not(:disabled)";
+  return $$(selector).map((input) => input.value);
+}
+
+function hasDiffSmolPocketContext(inputOverride = null) {
+  return currentGenerationInput(inputOverride).workflow.id === "diffsmol_pocket";
 }
 
 function selectedVinaMode(selected = selectedBuiltinEvaluations()) {
-  const chosen = new Set(selected);
-  const wantsScore = chosen.has("vina_score");
-  const wantsDock = chosen.has("vina_dock");
-  const wantsQvina = chosen.has("qvina");
-  if ((wantsScore || wantsDock) && wantsQvina) return "all";
-  if (wantsDock) return "vina_dock";
-  if (wantsQvina) return "qvina";
-  if (wantsScore) return "vina_score";
-  return "none";
+  return vinaModeForMetrics(selected);
+}
+
+function updateRunEvaluationSummary() {
+  const container = $("#run-evaluations");
+  if (!container) return;
+  const jobs = state.batchInputs.length ? buildBatchPayload().jobs : [buildJobPayload()];
+  const summaries = jobs.map((job) => [
+    ...(job.postprocess.metrics || []).map((metric) => EVALUATION_LABELS[metric] || metric),
+    ...job.tools.map((request) => state.tools.find((tool) => tool.id === request.id)?.name || request.id),
+  ].join(", "));
+  const unique = [...new Set(summaries)];
+  container.textContent = unique.length > 1
+    ? "Evaluations vary by input; each job will use its eligible selections."
+    : unique[0]
+      ? `This job will run: ${unique[0]}.`
+      : "This job will run generation only; no evaluators are selected.";
+}
+
+function resetEvaluationSelections() {
+  $$(".builtin-evaluation-toggle").forEach((input) => {
+    input.checked = DEFAULT_BUILTIN_EVALUATIONS.has(input.value);
+  });
+  $$(".evaluation-tool-toggle").forEach((input) => {
+    input.checked = false;
+  });
+  updateVinaControls();
 }
 
 function selectedEvaluationLabel(selected = selectedBuiltinEvaluations()) {
@@ -595,7 +864,7 @@ async function pollJob(jobId) {
       updateJobDetail(job, logText || "Waiting for job output.", logs);
     }
     renderJobsTable();
-    if (job.status === "completed") {
+    if (isResultsReadyJob(job)) {
       notifyJobTerminal(job, "completed");
       await refreshJobs(false);
       if (isSelected) await loadCompletedJob(job);
@@ -617,36 +886,36 @@ async function loadCompletedJob(job) {
   const result = await service.loadJobResults(job);
   const resultLogText = combineLogs(result.logs || {});
   const candidates = result.candidates || [];
+  const loadedJob = result.job || job;
   if (!candidates.length) {
-    state.selectedJob = result.job || job;
+    state.selectedJob = loadedJob;
     updateJobDetail(state.selectedJob, resultLogText || "No SDF files were found in the job output directory.", result.logs || {});
     showToast(state.selectedJob?.error_message || "No SDF results were found for this job.");
     setActiveTab("jobs");
     return;
   }
   const vinaFailures = candidates.filter((item) => String(item.properties?.VINA_STATUS || "").toLowerCase() === "failed");
-  const fallbackExample = state.study?.example || EXAMPLES[state.exampleId] || {};
   const pdbInput = result.inputs?.pdb || null;
   const sdfInput = result.inputs?.sdf || null;
   state.study = {
-    ...state.study,
     example: {
-      ...fallbackExample,
-      id: job.id,
-      label: job.id,
-      pdb: pdbInput?.name || fallbackExample.pdb || "input.pdb",
-      sdf: sdfInput?.name || fallbackExample.sdf || null,
+      id: loadedJob.id,
+      label: loadedJob.id,
+      pdb: pdbInput?.name || null,
+      sdf: sdfInput?.name || null,
     },
-    pdbText: pdbInput?.text || state.study?.pdbText || "",
-    referenceSdf: sdfInput?.text || state.study?.referenceSdf || null,
+    pdbText: pdbInput?.text || "",
+    referenceSdf: sdfInput?.text || null,
     candidates,
     artifacts: result.artifacts || [],
     logs: result.logs || {},
     summary: result.summary || {},
     toolRuns: result.toolRuns || [],
+    loadedJob,
   };
-  state.currentJob = job;
-  state.selectedJob = job;
+  state.showReferenceLigand = false;
+  state.currentJob = loadedJob;
+  state.selectedJob = loadedJob;
   state.resultSource = "job";
   state.selected = candidates[0];
   state.exportSelection = new Set();
@@ -672,6 +941,7 @@ function updateJobDetail(job, logText, logs = null) {
   $("#job-detail-id").textContent = job?.id || "None";
   $("#job-detail-target").textContent = targetLabel(job);
   $("#job-detail-started").textContent = formatDate(job?.started_at || job?.created_at);
+  renderJobProvenance(job);
   const note = job?.status_note ? `${job.status_note}\n\n` : "";
   const error = job?.error_message ? `Error: ${job.error_message}\n\n` : "";
   const fallback = job ? jobPaths(job) : null;
@@ -709,12 +979,12 @@ function renderJobsTable() {
     .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   $("#jobs-table").innerHTML = jobs.length ? jobs.map((job) => `
     <tr data-job-id="${escapeHtml(job.id)}" class="${state.selectedJob?.id === job.id ? "active" : ""}">
-      <td>${escapeHtml(shortJobId(job.id))}<br><small title="${escapeHtml(job.id)}">${escapeHtml(job.mode || "run")}</small></td>
+      <td>${escapeHtml(shortJobId(job.id))}<br><small title="${escapeHtml(job.id)}">${escapeHtml(engineLabel(job))} · ${escapeHtml(conditioningLabel(job))}</small></td>
       <td><span class="status-badge" data-status="${escapeHtml(job.status)}">${escapeHtml(job.status)}</span>${job.status_note ? `<br><small>${escapeHtml(job.status_note)}</small>` : ""}</td>
       <td>${escapeHtml(targetLabel(job))}<br><small>${escapeHtml(inputLabel(job))}</small></td>
       <td>${formatDate(job.created_at)}<br><small>${escapeHtml(slurmLabel(job))}</small></td>
       <td>
-        ${job.status === "completed" ? `<button class="secondary-button compact-action load-job-results">Results</button>` : ""}
+        ${isResultsReadyJob(job) ? `<button class="secondary-button compact-action load-job-results">Results</button>` : ""}
         ${isActiveJob(job) ? `<button class="secondary-button compact-action cancel-job">Cancel</button>` : ""}
         ${CLEANUP_JOB_STATUSES.has(job.status) ? `<button class="secondary-button compact-action rerun-job">Rerun</button>` : ""}
         ${CLEANUP_JOB_STATUSES.has(job.status) ? `<button class="secondary-button compact-action danger-action cleanup-job">Clean up</button>` : ""}
@@ -799,18 +1069,23 @@ async function rerunJob(jobId) {
 async function submitRerunFromSavedInputs(jobId) {
   const original = await service.getJob(jobId);
   const saved = await service.loadJobResults(original);
-  if (!saved.inputs?.pdb?.text) throw new Error("Original PDB input was not found for rerun.");
+  if (original.inputs?.pdb && !saved.inputs?.pdb?.text) throw new Error("Original PDB input was not found for rerun.");
+  if (original.inputs?.sdf && !saved.inputs?.sdf?.text) throw new Error("Original SDF input was not found for rerun.");
   const payload = {
     target: original.target || "local_cpu",
+    engine: original.engine || "conditar",
     mode: original.mode || (saved.inputs.sdf ? "reference" : "pocket"),
     example_id: original.example_id || "custom",
-    input_name: `rerun_${original.input_name || saved.inputs.pdb.name || jobId}`,
+    input_name: `rerun_${original.input_name || saved.inputs.pdb?.name || saved.inputs.sdf?.name || jobId}`,
     email: original.email || "",
-    pdb: { name: saved.inputs.pdb.name, text: saved.inputs.pdb.text },
+    pdb: saved.inputs.pdb?.text ? { name: saved.inputs.pdb.name, text: saved.inputs.pdb.text } : null,
     sdf: saved.inputs.sdf?.text ? { name: saved.inputs.sdf.name, text: saved.inputs.sdf.text } : null,
+    preprocess: original.preprocess || null,
     slurm: original.slurm || {},
     postprocess: original.postprocess || {},
+    tools: (original.tools || []).map(({ id, options }) => ({ id, options })),
     parameters: original.parameters || {},
+    rerun_of: jobId,
   };
   return service.submitJob(payload);
 }
@@ -819,8 +1094,8 @@ async function loadSelectedJobResults(jobId) {
   const job = await service.getJob(jobId);
   state.selectedJob = job;
   updateJobDetail(job, "Loading results...");
-  if (job.status !== "completed") {
-    showToast("Only completed jobs have results to load.");
+  if (!isResultsReadyJob(job)) {
+    showToast(isBuiltinPostprocessRunning(job) ? "Post-processing is still running. Results will be ready after annotation finishes." : "Only completed jobs have results to load.");
     return;
   }
   await loadCompletedJob(job);
@@ -899,10 +1174,12 @@ function notifyWatchedTerminalJobs(jobs) {
 function updateRunEstimate() {
   const estimate = $("#run-estimate");
   if (!estimate) return;
-  const inputs = Math.max(1, state.batchInputs.length || (state.customPdb || state.study ? 1 : 0));
-  const samples = Math.max(1, Number(state.parameters.num_samples) || 1);
+  const job = state.batchInputs.length ? buildBatchPayload().jobs[0] : buildJobPayload();
+  const hasSingleInput = job.engine === "diffsmol" ? Boolean(job.sdf) : Boolean(job.pdb);
+  const inputs = state.batchInputs.length || (hasSingleInput ? 1 : 0);
+  const samples = Math.max(1, Number(job.parameters.num_samples) || 1);
   const totalSamples = inputs * samples;
-  const target = resolvedTarget();
+  const target = job.target;
   const isGpu = isSlurmGpuTarget(target);
   const isOpenShift = isOpenShiftTarget(target);
   if (!inputs) {
@@ -921,7 +1198,8 @@ function updateRunEstimate() {
   const concurrencyNote = isGpu
     ? "Slurm GPU jobs can run in parallel once scheduled."
     : "Local CPU jobs run serially; keep this server window open.";
-  estimate.textContent = `Rule-of-thumb runtime: about ${formatDuration(totalSamples * minutesPerSample)} for ${inputs} input${inputs === 1 ? "" : "s"} × ${samples} sample${samples === 1 ? "" : "s"} on ${isGpu ? "Slurm GPU" : "local CPU"}. ${concurrencyNote}`;
+  const engineLabel = job.engine === "diffsmol" ? "DiffSMol" : "conDitar";
+  estimate.textContent = `Rule-of-thumb runtime: about ${formatDuration(totalSamples * minutesPerSample)} for ${inputs} ${engineLabel} input${inputs === 1 ? "" : "s"} × ${samples} sample${samples === 1 ? "" : "s"} on ${isGpu ? "Slurm GPU" : "local CPU"}. ${concurrencyNote}`;
 }
 
 function formatDuration(minutes) {
@@ -943,6 +1221,7 @@ function renderSummary() {
   const vinaScoreValues = candidates.map((item) => propertyMetric(item, "VINA_SCORE_ONLY")).filter(Number.isFinite);
   if (vinaScoreValues.length) cards[2] = ["Mean Vina score", formatMetric(mean(vinaScoreValues)), "kcal/mol"];
   $("#metric-strip").innerHTML = cards.map(([label, value, unit]) => `<div class="metric-card"><span>${label}</span><strong>${value}</strong><small>${unit}</small></div>`).join("");
+  renderResultsProvenance();
   renderQualitySummary(candidates);
 }
 
@@ -976,13 +1255,14 @@ function renderToolChest() {
   const status = $("#tool-chest-status");
   if (!list || !status) return;
   const tools = state.tools || [];
-  const job = state.selectedJob || state.currentJob;
-  const isCompletedJob = state.resultSource === "job" && job?.status === "completed";
+  const availableTools = tools.filter((tool) => tool.available).length;
+  const job = loadedResultsJob();
+  const isCompletedJob = isResultsReadyJob(job);
   const runs = state.study?.toolRuns || job?.tool_runs || [];
   status.textContent = !state.toolsLoaded
     ? "Tools unavailable"
     : isCompletedJob
-      ? `${tools.length} tool${tools.length === 1 ? "" : "s"} available`
+      ? `${availableTools} tool${availableTools === 1 ? "" : "s"} available`
       : "Load a completed job";
   if (!tools.length) {
     list.innerHTML = `<p class="tool-empty">${state.toolsLoaded ? "No tools are installed in gui/tools." : "Tool discovery failed."}</p>`;
@@ -1040,6 +1320,8 @@ function renderEvaluationTools() {
       <small>${escapeHtml(tool.available ? (tool.description || "") : (tool.error || "Tool unavailable."))}</small>
     </div>
   `).join("");
+  $$(".evaluation-tool-toggle").forEach((input) => input.addEventListener("change", updateRunEvaluationSummary));
+  updateRunEvaluationSummary();
 }
 
 function toolOptionControl(tool, input, context = "results") {
@@ -1068,6 +1350,11 @@ function toolOptionControl(tool, input, context = "results") {
 
 function toolRunSummary(run) {
   const result = run.result || {};
+  if (run.status === "completed" && state.study?.loadedJob?.engine === "diffsmol"
+    && state.study?.referenceSdf && Number.isFinite(Number(result.molecules))
+    && !Array.isArray(result.generated_sdfs)) {
+    return "Earlier run may include the reference ligand; rerun for corrected totals.";
+  }
   if (run.tool_id === "medchem_filters" && Number.isFinite(Number(result.molecules))) {
     const molecules = Number(result.molecules);
     const allPassed = Number(result.all_passed ?? 0);
@@ -1093,7 +1380,7 @@ function collectToolOptions(toolId, context = "results") {
 }
 
 async function runTool(toolId) {
-  const job = state.selectedJob || state.currentJob;
+  const job = loadedResultsJob();
   if (!job?.id) {
     showToast("Load a completed job before running a tool.");
     return;
@@ -1452,6 +1739,7 @@ function resetExportFilters(event = null) {
 function candidatePassesExportFilter(item, metric, filter) {
   const value = exportMetricValue(item, metric);
   if (metric.type === "number") {
+    if (value == null || value === "") return false;
     const numericValue = Number(value);
     if (!Number.isFinite(numericValue)) return false;
     if (filter.operator === "range") {
@@ -1527,7 +1815,7 @@ function metricWithValues(metric, candidates) {
 }
 
 function exportMetricValue(item, metric) {
-  if (metric.field) return Number(item[metric.field]);
+  if (metric.field) return item[metric.field] == null ? null : Number(item[metric.field]);
   if (!metric.property) return null;
   if (metric.property === "VINA_DOCK" || metric.property === "QVINA" || metric.property === "VINA_SCORE_ONLY" || metric.property === "VINA_MINIMIZE") {
     return propertyMetric(item, metric.property);
@@ -1603,6 +1891,8 @@ function renderResultsTable() {
     state.selected = state.study.candidates.find((item) => item.index === Number(row.dataset.index));
     renderResultsTable();
     renderSelectedStructure();
+    renderViewerSelectors();
+    renderMoleculeViewerWorkspace();
     renderCharts();
   }));
 }
@@ -1751,10 +2041,16 @@ function handleHistogramHover(event) {
 function renderSelectedStructure() {
   const molecule = state.selected;
   if (!molecule || !state.study || state.activeTab !== "results") return;
+  const hasReference = Boolean(state.study.referenceSdf);
+  const referenceControl = $("#viewer-reference-control");
+  const referenceToggle = $("#viewer-reference-toggle");
+  referenceControl.hidden = !hasReference;
+  referenceToggle.disabled = !hasReference;
+  referenceToggle.checked = hasReference && state.showReferenceLigand;
   $("#selected-name").textContent = molecule.id;
   const metrics = [
-    ["Formula", molecule.formula],
-    ["MW", `${molecule.molecularWeight} Da`],
+    ["Formula", molecule.formula || "-"],
+    ["MW", Number.isFinite(molecule.molecularWeight) ? `${molecule.molecularWeight} Da` : "-"],
     ["Heavy atoms", molecule.heavyAtoms],
     ["Rings", molecule.rings],
   ];
@@ -1772,11 +2068,15 @@ function renderSelectedStructure() {
   metrics.push(...viewerToolMetricRows(molecule));
   $("#selected-metrics").innerHTML = metrics.map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join("");
   render2D($("#viewer-2d"), molecule);
+  $("#viewer-loading").hidden = false;
   render3D($("#viewer-3d"), molecule, state.study.pdbText, {
-    proteinStyle: $("#protein-style").value,
-    ligandStyle: $("#ligand-style").value,
+    referenceText: hasReference && state.showReferenceLigand ? state.study.referenceSdf : null,
+    controlsHost: $("#results-viewer-controls"),
+    hideReferenceVisibility: true,
+  }).finally(() => {
+    $("#viewer-loading").hidden = true;
   });
-  $("#viewer-loading").hidden = true;
+  setView(state.view);
 }
 
 function setView(view) {
@@ -1784,15 +2084,159 @@ function setView(view) {
   $$(".view-toggle button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   $("#viewer-3d").hidden = view !== "3d";
   $("#viewer-2d").hidden = view !== "2d";
+  $("#results-viewer-controls").hidden = view !== "3d";
+}
+
+function renderViewerSelectors() {
+  const select = $("#viewer-molecule-select");
+  if (!select) return;
+  const options = viewerMoleculeOptions();
+  const optionHtml = options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join("");
+  select.innerHTML = optionHtml;
+  state.workspaceViewerMolecule = options.some((option) => option.value === state.workspaceViewerMolecule)
+    ? state.workspaceViewerMolecule
+    : "selected";
+  select.value = state.workspaceViewerMolecule;
+}
+
+function viewerMoleculeOptions() {
+  const options = [{ value: "selected", label: `Selected: ${state.selected?.id || "none"}` }];
+  if (state.study?.referenceSdf) options.push({ value: "reference", label: "Reference ligand" });
+  (state.study?.candidates || []).forEach((candidate) => {
+    options.push({ value: `candidate:${candidate.index}`, label: candidate.id });
+  });
+  return options;
+}
+
+function renderMoleculeViewerWorkspace() {
+  if (!state.study || !state.selected) return;
+  renderViewerSelectors();
+  renderViewerSlot(resolveViewerMolecule(state.workspaceViewerMolecule));
+}
+
+function renderViewerSlot(item) {
+  const title = $("#viewer-workspace-title");
+  const container = $("#viewer-workspace-3d");
+  const loading = $("#viewer-workspace-loading");
+  if (!title || !container || !loading) return;
+  if (!item) {
+    title.textContent = "No molecule";
+    container.innerHTML = "<div class='viewer-error'>Load a completed job before using the viewer.</div>";
+    loading.hidden = true;
+    return;
+  }
+  title.textContent = item.label;
+  loading.hidden = false;
+  render3D(container, item.molecule, state.study.pdbText, {
+    controlsHost: $("#workspace-viewer-controls"),
+    referenceText: state.study.referenceSdf && item.label !== "Reference ligand" ? state.study.referenceSdf : null,
+    defaultHiddenKinds: ["reference"],
+  }).finally(() => {
+    loading.hidden = true;
+  });
+}
+
+function resolveViewerMolecule(value) {
+  if (value === "reference") {
+    if (!state.study?.referenceSdf) return null;
+    return {
+      label: "Reference ligand",
+      molecule: {
+        id: "Reference ligand",
+        name: state.study.example?.sdf || "reference.sdf",
+        text: state.study.referenceSdf,
+      },
+    };
+  }
+  if (value?.startsWith("candidate:")) {
+    const index = Number(value.split(":")[1]);
+    const candidate = state.study?.candidates?.find((item) => item.index === index);
+    return candidate ? { label: candidate.id, molecule: candidate } : null;
+  }
+  return state.selected ? { label: `Selected: ${state.selected.id}`, molecule: state.selected } : null;
 }
 
 function updateResultsSource() {
-  if (state.resultSource === "job" && state.selectedJob) {
+  const job = loadedResultsJob();
+  if (job) {
     const count = state.study?.summary?.sdf_count ?? state.study?.candidates?.length ?? 0;
-    $("#results-source").textContent = `Loaded ${count} generated SDF${count === 1 ? "" : "s"} from job ${state.selectedJob.id}.`;
+    $("#results-source").textContent = `Loaded ${count} generated SDF${count === 1 ? "" : "s"} from ${engineLabel(job)} job ${job.id}.`;
     return;
   }
   $("#results-source").textContent = "Upload input structures and submit a job to review generated outputs here.";
+}
+
+function renderJobProvenance(job) {
+  const container = $("#job-detail-provenance");
+  if (!container) return;
+  const rows = job ? provenanceRows(job, { includeOutput: false }) : [];
+  container.hidden = !rows.length;
+  container.innerHTML = rows.map(([label, value]) => provenanceItem(label, value)).join("");
+}
+
+function renderResultsProvenance() {
+  const container = $("#results-provenance");
+  if (!container) return;
+  const job = loadedResultsJob();
+  const rows = job ? provenanceRows(job, {
+    includeOutput: true,
+    candidateCount: state.study?.summary?.sdf_count ?? state.study?.candidates?.length ?? null,
+  }) : [];
+  container.hidden = !rows.length;
+  container.innerHTML = rows.map(([label, value]) => provenanceItem(label, value)).join("");
+  const warning = $("#results-evaluation-warning");
+  if (warning) {
+    const failures = resultEvaluationFailures(job);
+    warning.hidden = !failures.length;
+    warning.innerHTML = failures.length
+      ? `<strong>Some evaluations failed</strong>Generated molecules are available, but ${escapeHtml(failures.join(" and "))} did not complete successfully. Check the job logs before interpreting those annotations.`
+      : "";
+  }
+}
+
+function resultEvaluationFailures(job) {
+  if (!job) return [];
+  const failures = [];
+  if (job.postprocess?.status === "failed") failures.push("built-in postprocessing");
+  if ((job.tools || []).some((tool) => tool.status === "failed")) failures.push("a selected Tool Chest evaluator");
+  return failures;
+}
+
+function provenanceItem(label, value) {
+  return `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`;
+}
+
+function provenanceRows(job, { includeOutput = false, candidateCount = null } = {}) {
+  const preprocess = job?.preprocess || {};
+  const sourceFiles = preprocess.source_files || {};
+  const rows = [
+    ["Engine", engineLabel(job)],
+    ["Conditioning", conditioningLabel(job)],
+    ["Input", inputLabel(job)],
+    ["PDB", provenanceFilename(job?.inputs?.pdb || sourceFiles.pdb || sourceFiles.protein || sourceFiles.pocket)],
+    ["SDF", provenanceFilename(job?.inputs?.sdf || sourceFiles.sdf || sourceFiles.ligand)],
+    ["Target", targetLabel(job)],
+  ];
+  const prepSource = preprocess.source || preprocess.workflow || preprocess.preprocessing?.method;
+  if (prepSource) rows.push(["Preprocess", workflowLabel(prepSource)]);
+  if (includeOutput) rows.push(["Generated", candidateCount == null ? "n/a" : `${candidateCount} SDF${candidateCount === 1 ? "" : "s"}`]);
+  return rows.filter(([, value]) => value !== null && value !== undefined && value !== "");
+}
+
+function provenanceFilename(path) {
+  if (!path) return "none";
+  return String(path).split("/").pop() || "none";
+}
+
+function engineLabel(job) {
+  return job?.engine === "diffsmol" ? "DiffSMol" : "conDitar";
+}
+
+function conditioningLabel(job) {
+  if (job?.engine === "diffsmol") return job?.inputs?.pdb ? "Ligand + pocket" : "Ligand only";
+  if (job?.mode === "reference") return "Protein + ligand";
+  if (job?.mode === "pocket") return "Pocket";
+  return job?.mode || "Run";
 }
 
 function targetLabel(job) {
@@ -1832,11 +2276,22 @@ function batchTargetNoun(target) {
 }
 
 function isActiveJob(job) {
-  return ACTIVE_JOB_STATUSES.has(job?.status);
+  return ACTIVE_JOB_STATUSES.has(job?.status) || isBuiltinPostprocessRunning(job);
 }
 
 function isTerminalJob(job) {
-  return TERMINAL_JOB_STATUSES.has(job?.status);
+  return TERMINAL_JOB_STATUSES.has(job?.status) && !isBuiltinPostprocessRunning(job);
+}
+
+function isBuiltinPostprocessRunning(job) {
+  return (job?.postprocess || {}).status === "running";
+}
+
+function isResultsReadyJob(job) {
+  return job?.status === "completed"
+    && job.outputs?.sdf_count !== 0
+    && !isBuiltinPostprocessRunning(job)
+    && !(job.tools || []).some((tool) => ["pending", "running"].includes(tool.status));
 }
 
 function shortJobId(jobId) {
@@ -1877,17 +2332,96 @@ function updateJobTargetControls() {
   }
   state.parameters.device = isSlurmGpu ? "auto" : "cpu";
   updateBatchLabel();
-  updateCommand();
+  updateRunSummary();
+}
+
+function updateBuiltinEvaluationAvailability() {
+  const isDiffSmol = state.engine === "diffsmol";
+  const hasPocket = hasDiffSmolPocketContext();
+  $$(".builtin-evaluation-toggle").forEach((input) => {
+    const disabled = isDiffSmol && VINA_EVALUATIONS.has(input.value) && !hasPocket;
+    input.disabled = disabled;
+    input.closest(".check-control")?.classList.toggle("is-disabled", disabled);
+  });
+  const note = $("#builtin-evaluation-note");
+  if (note) {
+    note.textContent = !isDiffSmol
+      ? "Select generated-molecule properties to compute with each run."
+      : hasPocket
+        ? "DiffSMol is in ligand + pocket mode. Generation uses the pocket, and Vina/QVina can score the outputs afterward."
+        : "DiffSMol is ligand-only. Vina/QVina is disabled because docking scores require a pocket PDB.";
+  }
 }
 
 function updateVinaControls() {
+  updateBuiltinEvaluationAvailability();
   const selected = selectedBuiltinEvaluations();
-  const enabled = selected.length > 0;
+  const vinaSelected = selected.some((item) => VINA_EVALUATIONS.has(item));
+  const enabled = vinaSelected;
   $("#vina-options").classList.toggle("is-disabled", !enabled);
   $("#vina-exhaustiveness").disabled = !enabled;
   $("#vina-cpu").disabled = !enabled;
   $("#vina-mode-summary").textContent = selectedEvaluationLabel(selected);
-  updateCommand();
+  updateRunEvaluationSummary();
+  updateRunSummary();
+}
+
+function setupWarnings() {
+  const generationInput = currentGenerationInput();
+  if (generationInput.batchCount) return [];
+  const sdfHeavyAtoms = generationInput.sdf?.text ? sdfHeavyAtomCount(generationInput.sdf.text) : 0;
+  return setupWarningsForWorkflow({
+    workflow: generationInput.workflow,
+    sdf: generationInput.sdf,
+    sdfHeavyAtoms,
+    heavyAtomWarningThreshold: DIFFSMOL_SHAPE_HEAVY_ATOM_WARNING,
+    selectedMetrics: selectedBuiltinEvaluations({ includeDisabled: true }),
+    stagedPocketWarnings: stagedPocketWarnings(),
+  });
+}
+
+function stagedPocketWarnings() {
+  const manifest = state.stagedPreprocessManifest;
+  if (!manifest) return [];
+  const prep = manifest.preprocessing || {};
+  const staged = manifest.staged_inputs || {};
+  const mode = staged.mode || manifest.selected_variant?.mode || "";
+  const hasPocketInput = Boolean(staged.pdb) && (mode === "pocket" || state.engine === "diffsmol");
+  if (!hasPocketInput) return [];
+  const warnings = [...(prep.structured_warnings || []), ...(prep.warnings || [])];
+  const residueCount = Number(prep.residue_count);
+  if (Number.isFinite(residueCount) && residueCount > 0 && !warnings.some((item) => String(item).includes("fewer than"))) {
+    if (residueCount < 10) {
+      warnings.push(`Pocket has ${residueCount} complete residues. More than 10-20 residues is advised for stable generation/scoring.`);
+    } else if (residueCount < 20) {
+      warnings.push(`Pocket has ${residueCount} complete residues. More than 20 residues is advised when possible.`);
+    }
+  }
+  const seen = new Set();
+  return warnings
+    .map((item) => normalizeWorkflowWarning(item, { code: "pocket_size", title: "Pocket size", appliesTo: "pocket" }))
+    .filter((item) => {
+      const key = `${item.code}:${item.text}`;
+      if (!item.text || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function updateSetupWarningBanner() {
+  const banner = $("#setup-warning-banner");
+  if (!banner) return;
+  const warnings = setupWarnings();
+  if (!warnings.length) {
+    banner.hidden = true;
+    banner.innerHTML = "";
+    return;
+  }
+  banner.hidden = false;
+  banner.innerHTML = `
+    <strong>Check before generating</strong>
+    <ul>${warnings.map((warning) => `<li><b>${escapeHtml(warning.title)}:</b> ${escapeHtml(warningText(warning))}</li>`).join("")}</ul>
+  `;
 }
 
 function formatDate(value) {
@@ -1915,7 +2449,7 @@ function bestValueLabel(values) {
 }
 
 function numericValues(items, key) {
-  return items.map((item) => Number(item[key])).filter(Number.isFinite);
+  return items.map((item) => item[key] == null ? null : Number(item[key])).filter(Number.isFinite);
 }
 
 function propertyValues(items, key) {
@@ -1938,26 +2472,10 @@ function compareMetric(a, b) {
   return left - right;
 }
 
-function updateCommand() {
-  const pdbName = state.batchInputs.length
-    ? `${state.batchInputs.length} folders`
-    : (state.customPdb?.name || EXAMPLES[state.exampleId]?.pdb || "<choose PDB>");
-  const sdfName = state.customSdf?.name || EXAMPLES[state.exampleId]?.sdf;
-  const args = [
-    "conditar-sample",
-    `--device ${isSlurmGpuTarget(resolvedTarget()) || isOpenShiftJobTarget(resolvedTarget()) ? "cuda:0" : "cpu"}`,
-    `--num_samples ${state.parameters.num_samples}`,
-    `--batch_size ${state.parameters.batch_size}`,
-    `--pdb_filename ${pdbName}`,
-  ];
-  if (state.mode !== "pocket") args.splice(4, 0, `--pocket_radius ${state.parameters.pocket_radius}`);
-  if (state.mode === "reference" && sdfName) args.push(`--sdf_filename ${sdfName}`);
-  const selected = selectedBuiltinEvaluations();
-  if (selected.length) {
-    args.push(`--vina_score --vina_mode ${selectedVinaMode(selected)} --vina_exhaustiveness ${$("#vina-exhaustiveness").value}`);
-  }
-  $("#command-preview").textContent = args.join(" ");
+function updateRunSummary() {
+  updateRunEvaluationSummary();
   updateRunEstimate();
+  updateSetupWarningBanner();
 }
 
 function resetParameters() {
@@ -1965,7 +2483,7 @@ function resetParameters() {
     state.parameters[parameter.key] = parameter.value;
     $(`#param-${parameter.key}`).value = parameter.value;
   });
-  updateCommand();
+  updateRunSummary();
   showToast("Sampling defaults restored.");
 }
 
@@ -1973,34 +2491,1377 @@ async function handlePdbUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
   const text = await readValidatedTextFile(file, "pdb");
-  if (!text) return;
+  if (!text) {
+    event.target.value = "";
+    updateRunSummary();
+    return;
+  }
+  clearLoadedStudyForCustomInput();
   state.customPdb = { name: file.name, text };
+  state.stagedPreprocessManifest = null;
+  renderSetupPreprocessSummary();
   state.batchInputs = [];
   updateBatchLabel();
   $("#pdb-name").textContent = file.name;
   $("#pdb-detail").textContent = `${formatBytes(file.size)} · local upload`;
+  if (!state.customSdf) {
+    $("#sdf-name").textContent = "Choose a reference SDF";
+    $("#sdf-detail").textContent = state.engine === "diffsmol"
+      ? "Required 3D reference ligand for shape expansion"
+      : "Required for protein + ligand mode";
+  }
   $("#example-select").value = "custom";
   state.exampleId = "custom";
   updateCustomOptionLabel(file.name);
-  if (state.study) {
-    state.study.pdbText = state.customPdb.text;
-    renderSelectedStructure();
-  }
+  updateVinaControls();
+  updateRunSummary();
 }
 
 async function handleSdfUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
   const text = await readValidatedTextFile(file, "sdf");
-  if (!text) return;
+  if (!text) {
+    event.target.value = "";
+    updateRunSummary();
+    return;
+  }
+  const moleculeCount = countSdfMolecules(text);
+  if (moleculeCount !== 1) {
+    showToast(`${file.name} has ${moleculeCount || "no"} molecules. Upload one 3D reference ligand SDF here; use Docking panel for ligand databases.`);
+    event.target.value = "";
+    return;
+  }
+  const heavyAtoms = sdfHeavyAtomCount(text);
+  clearLoadedStudyForCustomInput();
   state.customSdf = { name: file.name, text };
+  const useSdfOnlyDiffSmol = state.engine !== "diffsmol" && !setupPdbInput();
+  if (useSdfOnlyDiffSmol) setEngine("diffsmol");
+  if (state.engine === "diffsmol") setMode("reference", false);
+  state.stagedPreprocessManifest = null;
+  renderSetupPreprocessSummary();
   state.batchInputs = [];
   updateBatchLabel();
   $("#sdf-name").textContent = file.name;
-  $("#sdf-detail").textContent = `${formatBytes(file.size)} · local upload`;
+  $("#sdf-detail").textContent = [
+    `${formatBytes(file.size)} · local upload`,
+    heavyAtoms ? `${heavyAtoms} heavy atoms` : "",
+  ].filter(Boolean).join(" · ");
+  if (!state.customPdb) {
+    $("#pdb-name").textContent = "Choose a PDB file";
+    $("#pdb-detail").textContent = state.engine === "diffsmol"
+      ? "Optional: add a pocket PDB for pocket-conditioned generation"
+      : "Required · uploaded with this job";
+  }
   $("#example-select").value = "custom";
   state.exampleId = "custom";
   updateCustomOptionLabel(state.customPdb?.name || file.name);
+  updateVinaControls();
+  updateRunSummary();
+  const message = useSdfOnlyDiffSmol ? `${file.name} loaded for DiffSMol shape generation.` : `${file.name} loaded as reference ligand.`;
+  showToast(message);
+}
+
+async function handlePreprocessTargetUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const text = await readValidatedTextFile(file, "pdb");
+  if (!text) return;
+  state.preprocessTarget = { name: file.name, text };
+  state.preprocessProtein = state.preprocessProtein || state.preprocessTarget;
+  $("#preprocess-target-name").textContent = file.name;
+  $("#preprocess-target-detail").textContent = `${formatBytes(file.size)} · active target`;
+  if ($("#preprocess-protein-name").textContent === "Choose a protein PDB") {
+    $("#preprocess-protein-name").textContent = file.name;
+    $("#preprocess-protein-detail").textContent = `${formatBytes(file.size)} · receptor`;
+  }
+  addPreparedStructure({
+    mode: "pocket",
+    label: file.name,
+    source: "Uploaded target structure",
+    groupLabel: "Target upload",
+    sourceFiles: { protein: file.name },
+    pdb: state.preprocessTarget,
+    sdf: null,
+    metadata: {},
+    detail: "Uploaded target structure",
+  });
+  await renderPreprocessViewer({
+    title: file.name,
+    pdb: state.preprocessTarget,
+    sdf: centerMarkerMolecule({ center: { x: 0, y: 0, z: 0 } }),
+  });
+  showToast("Target loaded for preprocessing.");
+}
+
+function residuePocketPayload() {
+  const source = state.preprocessTarget || state.preprocessProtein || state.customPdb;
+  const residues = $("#manual-residue-spec").value.trim();
+  if (!source?.text) {
+    throw new Error("Choose a target protein first.");
+  }
+  if (!residues) {
+    throw new Error("Enter residues like A:45-62, A:88.");
+  }
+  const radiusText = $("#manual-residue-radius").value;
+  return {
+    source,
+    residues,
+    payload: {
+      pdb: source,
+      residues,
+      radius: radiusText === "" ? null : Number(radiusText),
+    },
+  };
+}
+
+async function runResiduePocketAction({ save }) {
+  const button = save ? $("#preprocess-build-residue-pocket") : $("#preprocess-preview-residue-pocket");
+  button.disabled = true;
+  $("#preprocess-target-detail").textContent = save ? "Building residue pocket..." : "Previewing residue pocket...";
+  try {
+    const { source, residues, payload } = residuePocketPayload();
+    const result = await service.preprocessPocketFromResidues(payload);
+    const meta = result.metadata || {};
+    $("#preprocess-target-detail").textContent = `${meta.residue_count || 0} residues · ${meta.atom_count || 0} atoms`;
+    await renderPreprocessViewer({
+      title: result.pdb?.name || "Residue pocket preview",
+      pdb: result.pdb,
+      sdf: centerMarkerMolecule({ center: { x: 0, y: 0, z: 0 } }),
+    });
+    if (!save) {
+      showToast("Residue pocket preview updated.");
+      return;
+    }
+    const entry = addPreparedStructure({
+      mode: "pocket",
+      label: result.pdb.name,
+      source: `Manual residues · ${residues}`,
+      groupLabel: `Residue pocket from ${source.name}`,
+      sourceFiles: { protein: source.name, residues },
+      pdb: result.pdb,
+      sdf: null,
+      metadata: meta,
+      detail: `Residue pocket · ${meta.residue_count || "n/a"} residues`,
+    });
+    await previewPreparedStructure(entry);
+    showToast("Residue pocket added to prepared structures.");
+  } catch (error) {
+    $("#preprocess-target-detail").textContent = save ? "Residue pocket failed" : "Residue preview failed";
+    showToast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function previewResiduePocket() {
+  await runResiduePocketAction({ save: false });
+}
+
+async function buildResiduePocket() {
+  await runResiduePocketAction({ save: true });
+}
+
+async function handlePreprocessComplexUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const text = await readValidatedTextFile(file, "pdb");
+  if (!text) return;
+  state.preprocessComplex = { name: file.name, text };
+  state.preprocessComplexResult = null;
+  state.preprocessComplexResultSignature = null;
+  renderPreparedStructureTray();
+  $("#preprocess-complex-name").textContent = file.name;
+  $("#preprocess-complex-detail").textContent = "Detecting ligands and preparing pocket...";
+  $("#preprocess-complex-picker").hidden = true;
+  $("#preprocess-complex-output").hidden = true;
+  try {
+    const result = await service.preprocessComplex({ name: file.name, text, pocket_radius: preprocessComplexRadius() });
+    handlePreprocessComplexResult(result);
+  } catch (error) {
+    $("#preprocess-complex-detail").textContent = "Preprocessing failed";
+    showToast(error.message);
+  }
+}
+
+async function applyPreprocessSelectedLigand() {
+  if (!state.preprocessComplex) return;
+  const ligandId = $("#preprocess-ligand-select").value;
+  if (!ligandId) {
+    showToast("Choose a ligand first.");
+    return;
+  }
+  $("#preprocess-complex-detail").textContent = "Preparing selected ligand and pocket...";
+  try {
+    const result = await service.preprocessComplex({
+      name: state.preprocessComplex.name,
+      text: state.preprocessComplex.text,
+      ligand_id: ligandId,
+      pocket_radius: preprocessComplexRadius(),
+    });
+    handlePreprocessComplexResult(result);
+  } catch (error) {
+    $("#preprocess-complex-detail").textContent = "Preprocessing failed";
+    showToast(error.message);
+  }
+}
+
+function handlePreprocessComplexResult(result) {
+  if (result.status === "needs_ligand") {
+    const candidates = result.candidates || [];
+    renderPreprocessLigandPicker(candidates, result.selected?.id || "");
+    $("#preprocess-complex-detail").textContent = `${candidates.length} ligands/cofactors found`;
+    showToast(result.message || "Choose which ligand should define the pocket.");
+    return;
+  }
+  if (result.status !== "ready" || !result.pdb?.text || !result.sdf?.text) {
+    showToast("Preprocessing did not return prepared files.");
+    return;
+  }
+  state.preprocessComplexResult = result;
+  renderPreprocessLigandPicker(result.candidates || [], result.selected?.id || "");
+  state.preprocessComplexResultSignature = boundComplexSettingsSignature();
+  $("#preprocess-complex-detail").textContent = `Prepared using ${result.selected?.label || "selected ligand"}`;
+  renderPreparedComplexOutput(result);
+  const complexGroup = `${state.preprocessComplex?.name || result.pdb.name} · ${result.selected?.label || "selected ligand"}`;
+  const complexSourceFiles = {
+    complex: state.preprocessComplex?.name || null,
+    protein: result.pdb?.name || null,
+    ligand: result.sdf?.name || null,
+    pocket: result.pocket_pdb?.name || null,
+  };
+  addPreparedStructure({
+    mode: "context",
+    contextType: "bound-complex",
+    settingsSignature: state.preprocessComplexResultSignature,
+    selectedVariantId: "pocket",
+    label: `Bound complex: ${result.selected?.resname || result.selected?.label || "selected ligand"}`,
+    source: "Bound-ligand complex split",
+    groupLabel: complexGroup,
+    sourceFiles: complexSourceFiles,
+    pdb: result.pdb,
+    sdf: result.sdf,
+    metadata: result.pocket_pdb?.metadata || {},
+    detail: `Reference ligand · ${result.selected?.label || "selected ligand"}`,
+    variants: [
+      {
+        id: "reference",
+        mode: "reference",
+        label: "Full protein + reference ligand",
+        pdb: result.pdb,
+        sdf: result.sdf,
+        metadata: result.pocket_pdb?.metadata || {},
+        detail: `Reference ligand · ${result.selected?.label || "selected ligand"}`,
+      },
+      {
+        id: "shape",
+        mode: "shape",
+        label: "Reference ligand only",
+        pdb: null,
+        sdf: result.sdf,
+        metadata: {
+          method: "bound_ligand_shape",
+          ligand: result.selected || null,
+        },
+        detail: `DiffSMol shape input · ${result.selected?.label || "selected ligand"}`,
+      },
+      ...(result.pocket_pdb?.text ? [{
+        id: "pocket",
+        mode: "pocket",
+        label: "Cropped pocket",
+        pdb: result.pocket_pdb,
+        sdf: null,
+        metadata: result.pocket_pdb.metadata || {},
+        detail: `${result.pocket_pdb.metadata?.radius || preprocessComplexRadius()} A pocket · ${result.pocket_pdb.metadata?.residue_count || "n/a"} residues`,
+      }] : []),
+    ],
+  });
+  renderPreprocessedComplexPreview(result, "pocket");
+}
+
+function renderPreprocessLigandPicker(candidates, selectedId = "") {
+  const ligandCandidates = (candidates || []).filter((item) => item.kind === "ligand");
+  const options = ligandCandidates.length ? ligandCandidates : (candidates || []);
+  if (!options.length) {
+    $("#preprocess-complex-picker").hidden = true;
+    return;
+  }
+  $("#preprocess-ligand-select").innerHTML = options
+    .map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === selectedId ? "selected" : ""}>${escapeHtml(item.label)}</option>`)
+    .join("");
+  $("#preprocess-complex-picker").hidden = false;
+}
+
+function preprocessComplexRadius() {
+  const value = Number($("#preprocess-complex-radius")?.value || 10);
+  return Number.isFinite(value) && value > 0 ? value : 10;
+}
+
+function boundComplexSettingsSignature() {
+  return JSON.stringify({
+    complex: state.preprocessComplex?.name || null,
+    radius: preprocessComplexRadius(),
+    ligand: $("#preprocess-ligand-select")?.value
+      || state.preprocessComplexResult?.selected?.id
+      || state.preprocessComplexResult?.selected?.label
+      || null,
+  });
+}
+
+function preprocessedComplexVariant(result, variantId = "pocket") {
+  if (!result) return null;
+  if (variantId === "shape" && result.sdf?.text) {
+    return {
+      id: "shape",
+      mode: "shape",
+      pdb: null,
+      sdf: result.sdf,
+      title: "Reference ligand only",
+      detail: `DiffSMol shape input · ${result.selected?.label || "selected ligand"}`,
+      metadata: {
+        method: "bound_ligand_shape",
+        ligand: result.selected || null,
+      },
+    };
+  }
+  if (variantId === "pocket" && result.pocket_pdb?.text) {
+    return {
+      id: "pocket",
+      mode: "pocket",
+      pdb: result.pocket_pdb,
+      sdf: null,
+      title: "Cropped pocket",
+      detail: `${result.pocket_pdb.metadata?.radius || preprocessComplexRadius()} A pocket · ${result.pocket_pdb.metadata?.residue_count || "n/a"} residues`,
+    };
+  }
+  return {
+    id: "reference",
+    mode: "reference",
+    pdb: result.pdb,
+    sdf: result.sdf,
+    title: "Full protein + reference ligand",
+    detail: `Reference ligand · ${result.selected?.label || "selected ligand"}`,
+  };
+}
+
+function renderPreparedComplexOutput(result) {
+  const pocketMeta = result.pocket_pdb?.metadata || {};
+  $("#preprocess-complex-output-title").textContent = "Bound-complex context saved to Candidate inputs";
+  $("#preprocess-complex-output-grid").innerHTML = [
+    ["Protein", result.pdb?.name || "protein.pdb"],
+    ["Reference ligand", result.sdf?.name || "reference.sdf"],
+    ["Pocket", result.pocket_pdb?.name || "pocket.pdb"],
+    ["Pocket residues", pocketMeta.residue_count ? String(pocketMeta.residue_count) : "n/a"],
+    ["Pocket atoms", pocketMeta.atom_count ? String(pocketMeta.atom_count) : "n/a"],
+  ].map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+  renderPreparedMetadata("#preprocess-complex-meta", [
+    pocketMeta.provenance,
+    ...(pocketMeta.warnings || []),
+  ]);
+  $("#preprocess-complex-output").hidden = false;
+}
+
+async function renderPreprocessedComplexPreview(result, variantId = "pocket") {
+  const variant = preprocessedComplexVariant(result, variantId);
+  if (!variant?.pdb?.text && !variant?.sdf?.text) return;
+  await renderPreprocessViewer({
+    title: variant.title,
+    pdb: variant.pdb,
+    sdf: variant.sdf,
+  });
+}
+
+async function previewPreprocessedComplexVariant(variantId) {
+  if (!state.preprocessComplexResult) {
+    showToast("Preprocess a complex first.");
+    return;
+  }
+  const contextEntry = state.preparedStructures.find((item) => item.contextType === "bound-complex" && item.sourceFiles?.complex === state.preprocessComplex?.name);
+  if (contextEntry) {
+    setPreparedContextVariant(contextEntry.id, variantId);
+    state.selectedPreparedStructureId = contextEntry.id;
+    renderPreparedStructureTray();
+  }
+  await renderPreprocessedComplexPreview(state.preprocessComplexResult, variantId);
+}
+
+function renderPreparedMetadata(selector, lines) {
+  const container = $(selector);
+  if (!container) return;
+  const items = [...new Set((lines || []).filter(Boolean))];
+  container.innerHTML = items.map((line, index) => `
+    <p><strong>${index === 0 ? "Source" : "Note"}:</strong> ${escapeHtml(line)}</p>
+  `).join("");
+}
+
+function addPreparedStructure(entry) {
+  const id = entry.id || `prepared-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const normalized = { ...entry, id, createdAt: new Date().toISOString() };
+  state.preparedStructures = [normalized, ...state.preparedStructures.filter((item) => item.id !== id)].slice(0, 12);
+  state.selectedPreparedStructureId = id;
+  renderPreparedStructureTray();
+  renderPreprocessStagingStatus();
+  return normalized;
+}
+
+function renderPreparedStructureTray() {
+  const tray = $("#prepared-structure-tray");
+  const count = state.preparedStructures.length;
+  $("#prepared-structure-count").textContent = `${count} candidate${count === 1 ? "" : "s"}`;
+  if (!count) {
+    tray.innerHTML = "<p class='field-note'>Candidate protein, pocket, and ligand sets appear here.</p>";
+    renderPreprocessStagingStatus();
+    return;
+  }
+  tray.innerHTML = state.preparedStructures.map((item) => {
+    const variant = selectedPreparedVariant(item);
+    const meta = variant.metadata || item.metadata || {};
+    const active = item.id === state.selectedPreparedStructureId ? " active" : "";
+    const isStagedView = item.id === state.stagedPreparedStructureId && (!item.variants?.length || item.selectedVariantId === state.stagedPreparedVariantId);
+    const staged = isStagedView ? " staged" : "";
+    const cardClass = `prepared-structure-card${active}${staged}`;
+    const mode = variant.mode || item.mode;
+    const modeLabel = preparedModeLabel(mode);
+    const residues = meta.residue_count ? `${meta.residue_count} residues` : "residues n/a";
+    const atoms = meta.atom_count ? `${meta.atom_count} atoms` : "atoms n/a";
+    const files = preparedStructureFileLines(item);
+    const sourceLabel = item.groupLabel || item.source || meta.provenance || "Prepared structure";
+    const statusLabel = isStagedView ? "Staged" : active ? "Previewing" : modeLabel;
+    const warningLines = preprocessWarningObjects(meta).map(warningText);
+    const variantSelector = item.variants?.length ? `
+          <label class="prepared-variant-control">
+            <span>View</span>
+            <select data-prepared-action="variant">
+              ${item.variants.map((option) => `<option value="${escapeHtml(option.id)}" ${option.id === item.selectedVariantId ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+            </select>
+          </label>
+    ` : "";
+    return `
+      <article class="${cardClass}" data-prepared-id="${escapeHtml(item.id)}">
+        <div>
+          <div class="prepared-structure-title-row">
+            <strong>${escapeHtml(item.label || item.pdb?.name || "Prepared structure")}</strong>
+            <span>${escapeHtml(statusLabel)}</span>
+          </div>
+          <small>${escapeHtml(item.variants?.length ? `Selected view: ${variant.label || modeLabel}` : modeLabel)} · ${escapeHtml(residues)} · ${escapeHtml(atoms)}</small>
+          <small class="prepared-source-line">${escapeHtml(sourceLabel)}</small>
+          ${warningLines.map((line) => `<small class="prepared-warning-line">${escapeHtml(line)}</small>`).join("")}
+          ${variantSelector}
+          <details class="prepared-provenance">
+            <summary>Source details</summary>
+            ${item.groupLabel ? `<p><b>Set</b>${escapeHtml(item.groupLabel)}</p>` : ""}
+            <p><b>Source</b>${escapeHtml(item.source || meta.provenance || "Prepared structure")}</p>
+            ${files.map(([label, value]) => `<p><b>${escapeHtml(label)}</b>${escapeHtml(value)}</p>`).join("")}
+          </details>
+        </div>
+        <div class="prepared-structure-actions">
+          <button class="secondary-button compact-action" type="button" data-prepared-action="preview">Preview</button>
+          <button class="secondary-button compact-action" type="button" data-prepared-action="download">Download</button>
+          <button class="secondary-button compact-action danger-action" type="button" data-prepared-action="remove">Remove</button>
+          <button class="primary-button compact-action" type="button" data-prepared-action="use">${isStagedView ? "Staged" : "Stage view"}</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+  $$("#prepared-structure-tray button[data-prepared-action]").forEach((button) => button.addEventListener("click", handlePreparedStructureAction));
+  $$("#prepared-structure-tray select[data-prepared-action]").forEach((select) => select.addEventListener("change", handlePreparedStructureAction));
+  renderPreprocessStagingStatus();
+}
+
+function boundComplexResultNeedsUpdate() {
+  return Boolean(
+    state.preprocessComplexResultSignature
+    && state.preprocessComplexResultSignature !== boundComplexSettingsSignature(),
+  );
+}
+
+function vinaPanelResultNeedsUpdate() {
+  return Boolean(
+    state.vinaPocketResultSignature
+    && state.vinaPocketResultSignature !== vinaPanelSettingsSignature(),
+  );
+}
+
+function selectedPreparedVariant(entry) {
+  if (!entry?.variants?.length) return entry || {};
+  return entry.variants.find((variant) => variant.id === entry.selectedVariantId) || entry.variants[0] || entry;
+}
+
+function preparedVariantById(entry, variantId) {
+  if (!entry?.variants?.length) return entry || {};
+  return entry.variants.find((variant) => variant.id === variantId) || selectedPreparedVariant(entry);
+}
+
+function preparedVariantPdb(entry, variant) {
+  return Object.prototype.hasOwnProperty.call(variant || {}, "pdb") ? variant.pdb : entry?.pdb;
+}
+
+function preparedVariantSdf(entry, variant) {
+  return Object.prototype.hasOwnProperty.call(variant || {}, "sdf") ? variant.sdf : entry?.sdf || null;
+}
+
+function renderPreprocessStagingStatus() {
+  const status = $("#preprocess-staged-status");
+  if (!status) return;
+  const entry = state.preparedStructures.find((item) => item.id === state.stagedPreparedStructureId);
+  status.classList.toggle("is-staged", Boolean(entry));
+  const variant = preparedVariantById(entry, state.stagedPreparedVariantId);
+  const mode = variant.mode || entry?.mode;
+  status.textContent = entry ? `Staged: ${preparedModeLabel(mode).toLowerCase()}` : "Nothing staged";
+  status.title = entry ? `${entry.label || ""}${variant.label ? ` · ${variant.label}` : ""}` : "";
+}
+
+function preparedModeLabel(mode) {
+  if (mode === "reference") return "Protein + ligand";
+  if (mode === "pocket") return "Pocket";
+  if (mode === "shape") return "Shape ligand";
+  return "Context";
+}
+
+function preparedStructureFileLines(item) {
+  const files = item.sourceFiles || {};
+  return [
+    ["Complex", files.complex],
+    ["Protein", files.protein || item.pdb?.name],
+    ["Ligand", files.ligand || item.sdf?.name],
+    ["Pocket", files.pocket],
+    ["Panel", files.panel],
+    ["Residues", files.residues],
+  ].filter(([, value]) => value);
+}
+
+async function handlePreparedStructureAction(event) {
+  const card = event.target.closest("[data-prepared-id]");
+  let entry = state.preparedStructures.find((item) => item.id === card?.dataset.preparedId);
+  if (!entry) return;
+  const action = event.target.dataset.preparedAction;
+  if (action === "variant") {
+    await updatePreparedStructureVariant(entry.id, event.target.value);
+    return;
+  }
+  if (action === "remove") {
+    removePreparedStructure(entry.id);
+    return;
+  }
+  state.selectedPreparedStructureId = entry.id;
+  renderPreparedStructureTray();
+  entry = await resolvePreparedStructure(entry);
+  if (!entry) return;
+  const variant = selectedPreparedVariant(entry);
+  const pdb = preparedVariantPdb(entry, variant);
+  const sdf = preparedVariantSdf(entry, variant);
+  const stageMode = variant.mode || entry.mode;
+  if (!pdb?.text && !sdf?.text) return;
+  if (action === "use") {
+    state.stagedPreparedStructureId = entry.id;
+    state.stagedPreparedVariantId = variant.id || null;
+    renderPreparedStructureTray();
+    stagePreparedInputs({
+      mode: stageMode,
+      pdb,
+      sdf: stageMode === "reference" || stageMode === "shape" ? sdf : null,
+      label: entry.label || pdb?.name || sdf?.name,
+      detail: variant.detail || entry.detail || entry.source || "Prepared structure",
+      preprocessManifest: buildPreprocessManifest(entry, variant, {
+        mode: stageMode,
+        pdb,
+        sdf: stageMode === "reference" || stageMode === "shape" ? sdf : null,
+      }),
+    });
+    return;
+  }
+  if (action === "download") {
+    await downloadPreparedStructure(entry);
+    return;
+  }
+  await previewPreparedStructure(entry);
+}
+
+async function updatePreparedStructureVariant(id, variantId) {
+  let updatedEntry = null;
+  state.preparedStructures = state.preparedStructures.map((item) => {
+    if (item.id !== id) return item;
+    updatedEntry = { ...item, selectedVariantId: variantId };
+    return updatedEntry;
+  });
+  state.selectedPreparedStructureId = id;
+  if (updatedEntry?.contextType === "vina-panel") {
+    state.selectedVinaPocketId = variantId;
+    renderVinaPocketCandidates();
+  }
+  renderPreparedStructureTray();
+  if (updatedEntry) {
+    const resolved = await resolvePreparedStructure(updatedEntry);
+    if (resolved) await previewPreparedStructure(resolved);
+  }
+}
+
+function removePreparedStructure(id) {
+  const removed = state.preparedStructures.find((item) => item.id === id);
+  const wasStaged = state.stagedPreparedStructureId === id;
+  state.preparedStructures = state.preparedStructures.filter((item) => item.id !== id);
+  if (state.selectedPreparedStructureId === id) {
+    state.selectedPreparedStructureId = state.preparedStructures[0]?.id || null;
+  }
+  if (wasStaged) clearStagedPreparedInputs();
+  renderPreparedStructureTray();
+  renderPreprocessStagingStatus();
+  showToast(wasStaged
+    ? "Removed staged input from Generate setup."
+    : removed?.label ? `Removed ${removed.label}.` : "Prepared structure removed.");
+}
+
+function clearStagedPreparedInputs() {
+  state.stagedPreparedStructureId = null;
+  state.stagedPreparedVariantId = null;
+  state.stagedPreprocessManifest = null;
+  state.customPdb = null;
+  state.customSdf = null;
+  state.batchInputs = [];
+  updateInputLabels(null);
+  updateCustomOptionLabel("");
+  $("#example-select").value = "custom";
+  state.exampleId = "custom";
+  renderSetupPreprocessSummary();
+  updateBatchLabel();
+  updateVinaControls();
+  updateRunSummary();
+}
+
+async function resolvePreparedStructure(entry) {
+  if (!entry) return null;
+  if (entry.variants?.length) {
+    const variant = selectedPreparedVariant(entry);
+    if (variant.pdb?.text) return entry;
+    if (variant.prepare === "vina-pocket" && variant.center) {
+      const sourceProtein = entry.sourceProtein || state.preprocessProtein;
+      if (!sourceProtein) {
+        showToast("The source protein for this Vina pocket is no longer loaded.");
+        return null;
+      }
+      try {
+        const result = await service.preprocessPocketFromCenter({
+          pdb: sourceProtein,
+          center: variant.center,
+          radius: variant.radius || variant.metadata?.radius || 10,
+        });
+        const updatedVariant = {
+          ...variant,
+          pdb: result.pdb,
+          metadata: { ...(variant.metadata || {}), ...(result.metadata || {}) },
+          detail: `Vina cluster · ${result.metadata?.residue_count || "n/a"} residues`,
+        };
+        const updated = {
+          ...entry,
+          sourceFiles: { ...(entry.sourceFiles || {}), pocket: result.pdb?.name || null },
+          variants: entry.variants.map((item) => item.id === variant.id ? updatedVariant : item),
+        };
+        state.preparedStructures = state.preparedStructures.map((item) => item.id === entry.id ? updated : item);
+        renderPreparedStructureTray();
+        return updated;
+      } catch (error) {
+        showToast(error.message);
+        return null;
+      }
+    }
+  }
+  if (entry.pdb?.text) return entry;
+  if (entry.prepare === "vina-pocket") {
+    if (!state.preprocessProtein || !entry.center) {
+      showToast("The source protein for this Vina pocket is no longer loaded.");
+      return null;
+    }
+    try {
+      const result = await service.preprocessPocketFromCenter({
+        pdb: state.preprocessProtein,
+        center: entry.center,
+        radius: entry.metadata?.radius || 10,
+      });
+      const updated = {
+        ...entry,
+        pdb: result.pdb,
+        metadata: { ...(entry.metadata || {}), ...(result.metadata || {}) },
+        sourceFiles: { ...(entry.sourceFiles || {}), pocket: result.pdb?.name || null },
+        detail: `Vina cluster · ${result.metadata?.residue_count || "n/a"} residues`,
+      };
+      state.preparedStructures = state.preparedStructures.map((item) => item.id === entry.id ? updated : item);
+      renderPreparedStructureTray();
+      return updated;
+    } catch (error) {
+      showToast(error.message);
+      return null;
+    }
+  }
+  showToast("This prepared structure is missing a PDB.");
+  return null;
+}
+
+async function previewPreparedStructure(entry) {
+  const variant = selectedPreparedVariant(entry);
+  const pdb = preparedVariantPdb(entry, variant);
+  const sdf = preparedVariantSdf(entry, variant);
+  if (!pdb?.text && !sdf?.text) return;
+  await renderPreprocessViewer({
+    title: variant.label || entry.label || pdb?.name || sdf?.name,
+    pdb,
+    sdf: sdf || (entry.center ? centerMarkerMolecule({ center: entry.center }) : null),
+  });
+}
+
+async function renderPreprocessViewer({ title, pdb, sdf }) {
+  const container = $("#preprocess-main-viewer-3d");
+  const loading = $("#preprocess-main-viewer-loading");
+  const heading = $("#preprocess-main-viewer-title");
+  if (!container || (!pdb?.text && !sdf?.text)) return;
+  container.closest(".preprocess-main-viewer-panel")?.classList.remove("empty-viewer");
+  heading.textContent = title || pdb?.name || sdf?.name || "Prepared structure";
+  loading.hidden = false;
+  try {
+    container.innerHTML = "";
+    await render3D(container, sdf || null, pdb?.text || "", {
+      controlsHost: $("#preprocess-viewer-controls"),
+      ligandLabel: sdf?.id === "Pocket center" ? "Pocket center" : "Ligand",
+      onUseResidues: (spec) => {
+        state.preprocessTarget = pdb;
+        $("#preprocess-target-name").textContent = pdb.name || "Viewed protein";
+        $("#preprocess-target-detail").textContent = "Selected from the active viewer";
+        $("#manual-residue-spec").value = spec;
+        $("#manual-residue-spec").closest("details").open = true;
+        showToast("Residues added to the known-site pocket input. Preview before saving.");
+      },
+    });
+  } catch (error) {
+    container.innerHTML = `<div class="viewer-error">${escapeHtml(error.message)}</div>`;
+  } finally {
+    loading.hidden = true;
+  }
+}
+
+async function downloadPreparedStructure(entry) {
+  const variant = selectedPreparedVariant(entry);
+  const pdb = preparedVariantPdb(entry, variant);
+  const sdf = preparedVariantSdf(entry, variant);
+  await downloadPreparedArchive(`${filenameStem(pdb?.name || sdf?.name || "prepared_structure")}_preprocess.zip`, [
+    pdb,
+    sdf,
+    {
+      name: "preprocess_metadata.json",
+      text: JSON.stringify({
+        label: entry.label,
+        mode: variant.mode || entry.mode,
+        variant: variant.label || null,
+        source: entry.source,
+        files: {
+          pdb: pdb?.name || null,
+          sdf: sdf?.name || null,
+        },
+        source_files: entry.sourceFiles || {},
+        set: entry.groupLabel || null,
+        metadata: variant.metadata || entry.metadata || {},
+      }, null, 2),
+    },
+  ]);
+  showToast("Prepared structure downloaded.");
+}
+
+async function downloadPreprocessedComplex() {
+  const result = state.preprocessComplexResult;
+  if (!result?.pdb?.text || !result?.sdf?.text) {
+    showToast("Preprocess a complex first.");
+    return;
+  }
+  await downloadPreparedArchive("conditar_complex_inputs.zip", [
+    result.pdb,
+    result.sdf,
+    result.pocket_pdb,
+    {
+      name: "preprocess_metadata.json",
+      text: JSON.stringify(preprocessComplexMetadata(result), null, 2),
+    },
+  ]);
+  showToast("Prepared complex inputs downloaded.");
+}
+
+function preprocessComplexMetadata(result) {
+  return {
+    workflow: "complex_with_bound_ligand",
+    selected_ligand: result.selected || null,
+    files: {
+      protein: result.pdb?.name || null,
+      reference_ligand: result.sdf?.name || null,
+      pocket: result.pocket_pdb?.name || null,
+    },
+    pocket: result.pocket_pdb?.metadata || {},
+  };
+}
+
+function usePreprocessedComplex(mode) {
+  const result = state.preprocessComplexResult;
+  if (!result) {
+    showToast("Preprocess a complex first.");
+    return;
+  }
+  const contextEntry = state.preparedStructures.find((item) => item.contextType === "bound-complex" && item.sourceFiles?.complex === state.preprocessComplex?.name);
+  if (boundComplexResultNeedsUpdate()) {
+    showToast("Bound-complex settings changed. Regenerate the context before staging.");
+    return;
+  }
+  if (mode === "shape") {
+    const shapeSdf = boundComplexShapeSdf(result, contextEntry);
+    if (!shapeSdf?.text) {
+      showToast("No reference ligand SDF is available.");
+      return;
+    }
+    if (contextEntry) setPreparedContextVariant(contextEntry.id, "shape");
+    stagePreparedInputs({
+      mode: "shape",
+      pdb: null,
+      sdf: shapeSdf,
+      label: shapeSdf.name,
+      detail: `DiffSMol shape input · ${result.selected?.label || "selected ligand"}`,
+      preprocessManifest: buildPreprocessManifest(contextEntry || {
+        contextType: "bound-complex",
+        source: "Bound-ligand complex split",
+        groupLabel: state.preprocessComplex?.name || null,
+        sourceFiles: { complex: state.preprocessComplex?.name || null, ligand: shapeSdf?.name || null },
+        metadata: { method: "bound_ligand_shape", ligand: result.selected || null },
+      }, preprocessedComplexVariant(result, "shape"), {
+        mode: "shape",
+        pdb: null,
+        sdf: shapeSdf,
+      }),
+    });
+    markPreparedStructureStaged((item) => item.id === contextEntry?.id, "shape");
+    return;
+  }
+  if (mode === "pocket") {
+    if (!result.pocket_pdb?.text) {
+      showToast("No cropped pocket PDB is available.");
+      return;
+    }
+    if (contextEntry) setPreparedContextVariant(contextEntry.id, "pocket");
+    stagePreparedInputs({
+      mode: "pocket",
+      pdb: result.pocket_pdb,
+      sdf: null,
+      label: result.pocket_pdb.name,
+      detail: `${result.pocket_pdb.metadata?.radius || preprocessComplexRadius()} A pocket · ${result.pocket_pdb.metadata?.residue_count || "n/a"} residues`,
+      preprocessManifest: buildPreprocessManifest(contextEntry || {
+        contextType: "bound-complex",
+        source: "Bound-ligand complex split",
+        groupLabel: state.preprocessComplex?.name || null,
+        sourceFiles: { complex: state.preprocessComplex?.name || null },
+        metadata: result.pocket_pdb?.metadata || {},
+      }, preprocessedComplexVariant(result, "pocket"), {
+        mode: "pocket",
+        pdb: result.pocket_pdb,
+        sdf: null,
+      }),
+    });
+    markPreparedStructureStaged((item) => item.id === contextEntry?.id, "pocket");
+    return;
+  }
+  if (contextEntry) setPreparedContextVariant(contextEntry.id, "reference");
+  stagePreparedInputs({
+    mode: "reference",
+    pdb: result.pdb,
+    sdf: result.sdf,
+    label: state.preprocessComplex?.name || result.pdb.name,
+    detail: `Reference ligand · ${result.selected?.label || "selected ligand"}`,
+    preprocessManifest: buildPreprocessManifest(contextEntry || {
+      contextType: "bound-complex",
+      source: "Bound-ligand complex split",
+      groupLabel: state.preprocessComplex?.name || null,
+      sourceFiles: { complex: state.preprocessComplex?.name || null },
+      metadata: result.pocket_pdb?.metadata || {},
+    }, preprocessedComplexVariant(result, "reference"), {
+      mode: "reference",
+      pdb: result.pdb,
+      sdf: result.sdf,
+    }),
+  });
+  markPreparedStructureStaged((item) => item.id === contextEntry?.id, "reference");
+}
+
+function boundComplexShapeSdf(result, contextEntry) {
+  if (result?.sdf?.text) return result.sdf;
+  const variants = contextEntry?.variants || [];
+  return variants.find((variant) => variant.id === "shape")?.sdf
+    || variants.find((variant) => variant.id === "reference")?.sdf
+    || contextEntry?.sdf
+    || null;
+}
+
+function setPreparedContextVariant(id, variantId) {
+  state.preparedStructures = state.preparedStructures.map((item) => item.id === id ? { ...item, selectedVariantId: variantId } : item);
+}
+
+function markPreparedStructureStaged(predicate, variantId = null) {
+  const entry = state.preparedStructures.find(predicate);
+  if (!entry) return;
+  state.stagedPreparedStructureId = entry.id;
+  state.stagedPreparedVariantId = variantId || entry.selectedVariantId || null;
+  state.selectedPreparedStructureId = entry.id;
+  renderPreparedStructureTray();
+  renderPreprocessStagingStatus();
+}
+
+async function handlePreprocessProteinUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const text = await readValidatedTextFile(file, "pdb");
+  if (!text) return;
+  state.preprocessProtein = { name: file.name, text };
+  state.vinaPocketResult = null;
+  state.vinaPocketResultSignature = null;
+  state.selectedVinaPocketId = null;
+  renderPreparedStructureTray();
+  $("#preprocess-protein-name").textContent = file.name;
+  $("#preprocess-protein-detail").textContent = `${formatBytes(file.size)} · receptor`;
+  $("#vina-pocket-output").hidden = true;
+  await renderPreprocessViewer({
+    title: file.name,
+    pdb: state.preprocessProtein,
+    sdf: centerMarkerMolecule({ center: { x: 0, y: 0, z: 0 } }),
+  });
+}
+
+async function handlePreprocessPanelUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    $("#preprocess-panel-detail").textContent = "Preparing ligand panel...";
+    const panel = await readLigandPanelFile(file);
+    if (!panel) return;
+    state.preprocessPanel = panel;
+    state.vinaPocketResult = null;
+    state.vinaPocketResultSignature = null;
+    state.selectedVinaPocketId = null;
+    renderPreparedStructureTray();
+    $("#preprocess-panel-name").textContent = file.name;
+    $("#preprocess-panel-detail").textContent = `${panel.count || "SDF"} ligand${panel.count === 1 ? "" : "s"} · ${panel.source || "ligand panel"}`;
+    $("#vina-pocket-output").hidden = true;
+  } catch (error) {
+    $("#preprocess-panel-detail").textContent = "Ligand panel failed";
+    showToast(error.message);
+  }
+}
+
+async function runVinaPanelPreprocessing() {
+  if (!state.preprocessProtein || !state.preprocessPanel) {
+    showToast("Choose a protein structure and ligand panel SDF or CSV first.");
+    return;
+  }
+  const button = $("#preprocess-run-vina-panel");
+  button.disabled = true;
+  $("#preprocess-panel-detail").textContent = "Running Vina panel...";
+  try {
+    const options = vinaPanelOptions();
+    const result = await service.preprocessVinaPanelPockets({
+      pdb: state.preprocessProtein,
+      ligands: state.preprocessPanel,
+      options,
+    });
+    state.vinaPocketResult = result;
+    state.vinaPocketResultSignature = vinaPanelSettingsSignature();
+    state.selectedVinaPocketId = result.candidates?.[0]?.id || null;
+    renderVinaPocketCandidates();
+    saveVinaPanelContext(result);
+    renderPreparedMetadata("#vina-pocket-meta", [
+      result.provenance,
+      ...(result.warnings || []),
+      ...(result.vina_panel?.warnings || []),
+    ]);
+    renderSelectedVinaPocketPreview();
+    $("#preprocess-panel-detail").textContent = `${result.vina_panel?.pose_count || 0} docked poses clustered`;
+    showToast(`${result.candidates?.length || 0} candidate pocket${result.candidates?.length === 1 ? "" : "s"} saved to Candidate inputs.`);
+  } catch (error) {
+    $("#preprocess-panel-detail").textContent = "Vina panel failed";
+    showToast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function saveVinaPanelContext(result) {
+  const candidates = result.candidates || [];
+  if (!candidates.length) return;
+  const proteinName = state.preprocessProtein?.name || "protein";
+  const panelName = state.preprocessPanel?.name || "panel";
+  addPreparedStructure({
+    id: `vina-context-${filenameStem(proteinName)}-${filenameStem(panelName)}`,
+    mode: "context",
+    contextType: "vina-panel",
+    settingsSignature: state.vinaPocketResultSignature,
+    selectedVariantId: state.selectedVinaPocketId || candidates[0].id,
+    label: `Docking panel: ${panelName}`,
+    source: "Docking-panel pocket search",
+    groupLabel: `${proteinName} · ${panelName}`,
+    sourceProtein: state.preprocessProtein,
+    sourceFiles: {
+      protein: proteinName,
+      panel: panelName,
+    },
+    metadata: result.vina_panel || {},
+    detail: `${candidates.length} pocket candidate${candidates.length === 1 ? "" : "s"}`,
+    variants: candidates.map((candidate) => {
+      const pose = candidate.representative_pose;
+      return {
+        id: candidate.id,
+        mode: "pocket",
+        prepare: "vina-pocket",
+        label: candidate.label || candidate.id,
+        center: candidate.center,
+        radius: candidate.radius || 10,
+        sdf: pose?.sdf ? { name: `${filenameStem(pose.name || candidate.id)}.sdf`, text: pose.sdf } : null,
+        metadata: candidate,
+        detail: `Vina cluster · ${candidate.supporting_ligand_count || 0} ligand${candidate.supporting_ligand_count === 1 ? "" : "s"}`,
+      };
+    }),
+  });
+}
+
+function vinaPanelSettingsSignature() {
+  return JSON.stringify({
+    protein: state.preprocessProtein?.name || null,
+    panel: state.preprocessPanel?.name || null,
+    options: vinaPanelOptions(),
+  });
+}
+
+function vinaPanelOptions() {
+  const optionIds = {
+    center_x: "#vina-panel-center-x",
+    center_y: "#vina-panel-center-y",
+    center_z: "#vina-panel-center-z",
+    size_x: "#vina-panel-size-x",
+    size_y: "#vina-panel-size-y",
+    size_z: "#vina-panel-size-z",
+    max_ligands: "#vina-panel-max-ligands",
+    exhaustiveness: "#vina-panel-exhaustiveness",
+  };
+  const options = { cpu: 1, pocket_radius: 10, cluster_distance: 6 };
+  Object.entries(optionIds).forEach(([key, selector]) => {
+    const value = $(selector).value;
+    if (value !== "") options[key] = Number(value);
+  });
+  return options;
+}
+
+function renderVinaPocketCandidates() {
+  const candidates = state.vinaPocketResult?.candidates || [];
+  $("#vina-pocket-candidates").innerHTML = candidates.length ? candidates.map((candidate) => `
+    <label class="pocket-candidate ${candidate.id === state.selectedVinaPocketId ? "active" : ""}">
+      <input type="radio" name="vina-pocket-candidate" value="${escapeHtml(candidate.id)}" ${candidate.id === state.selectedVinaPocketId ? "checked" : ""}>
+      <span><strong>${escapeHtml(candidate.label || candidate.id)}</strong><small>${escapeHtml(pocketCandidateSummary(candidate))}</small></span>
+    </label>
+  `).join("") : "<p class='field-note'>No pocket candidates were found.</p>";
+  $$("#vina-pocket-candidates input").forEach((input) => input.addEventListener("change", (event) => {
+    state.selectedVinaPocketId = event.target.value;
+    const contextId = `vina-context-${filenameStem(state.preprocessProtein?.name || "protein")}-${filenameStem(state.preprocessPanel?.name || "panel")}`;
+    setPreparedContextVariant(contextId, state.selectedVinaPocketId);
+    renderVinaPocketCandidates();
+    renderPreparedStructureTray();
+    renderSelectedVinaPocketPreview();
+  }));
+  $("#vina-pocket-output").hidden = false;
+}
+
+function pocketCandidateSummary(candidate) {
+  const center = candidate.center || {};
+  const score = candidate.best_score == null ? "n/a" : Number(candidate.best_score).toFixed(2);
+  return `center ${center.x}, ${center.y}, ${center.z} · ${candidate.supporting_ligand_count || 0} ligands · best ${score}`;
+}
+
+async function useSelectedVinaPocket() {
+  const prepared = await prepareSelectedVinaPocket();
+  if (!prepared) return;
+  const pose = prepared.candidate.representative_pose;
+  const contextId = `vina-context-${filenameStem(state.preprocessProtein?.name || "protein")}-${filenameStem(state.preprocessPanel?.name || "panel")}`;
+  let contextEntry = state.preparedStructures.find((item) => item.id === contextId);
+  if (vinaPanelResultNeedsUpdate()) {
+    showToast("Docking-panel settings changed. Find candidate pockets again before staging.");
+    return;
+  }
+  if (!contextEntry && state.vinaPocketResult) {
+    saveVinaPanelContext(state.vinaPocketResult);
+    contextEntry = state.preparedStructures.find((item) => item.id === contextId);
+  }
+  if (contextEntry) {
+    state.preparedStructures = state.preparedStructures.map((item) => {
+      if (item.id !== contextEntry.id) return item;
+      return {
+        ...item,
+        selectedVariantId: prepared.candidate.id,
+        sourceFiles: { ...(item.sourceFiles || {}), ligand: pose?.name || null, pocket: prepared.pdb?.name || null },
+        variants: (item.variants || []).map((variant) => variant.id === prepared.candidate.id ? {
+          ...variant,
+          pdb: prepared.pdb,
+          sdf: pose?.sdf ? { name: `${filenameStem(pose.name || prepared.candidate.id)}.sdf`, text: pose.sdf } : variant.sdf || null,
+          metadata: { ...(variant.metadata || {}), ...(prepared.metadata || {}) },
+          detail: `Vina cluster · ${prepared.metadata?.residue_count || "n/a"} residues`,
+        } : variant),
+      };
+    });
+    state.stagedPreparedStructureId = contextEntry.id;
+    state.stagedPreparedVariantId = prepared.candidate.id;
+    state.selectedPreparedStructureId = contextEntry.id;
+  }
+  renderPreparedStructureTray();
+    stagePreparedInputs({
+      mode: "pocket",
+      pdb: prepared.pdb,
+      sdf: null,
+      label: prepared.pdb.name,
+      detail: `Vina cluster · ${prepared.metadata?.residue_count || "n/a"} residues`,
+      preprocessManifest: buildPreprocessManifest(contextEntry || {
+        contextType: "vina-panel",
+        source: "Docking-panel pocket search",
+        groupLabel: `${state.preprocessProtein?.name || "protein"} · ${state.preprocessPanel?.name || "panel"}`,
+        sourceFiles: { protein: state.preprocessProtein?.name || null, panel: state.preprocessPanel?.name || null },
+        metadata: state.vinaPocketResult?.vina_panel || {},
+      }, {
+        id: prepared.candidate.id,
+        mode: "pocket",
+        label: prepared.candidate.label || prepared.candidate.id,
+        center: prepared.candidate.center,
+        metadata: { ...(prepared.candidate || {}), ...(prepared.metadata || {}) },
+      }, {
+        mode: "pocket",
+        pdb: prepared.pdb,
+        sdf: null,
+      }),
+    });
+}
+
+async function downloadSelectedVinaPocket() {
+  const prepared = await prepareSelectedVinaPocket();
+  if (!prepared) return;
+  const pose = prepared.candidate.representative_pose;
+  await downloadPreparedArchive(`${filenameStem(prepared.pdb.name)}_preprocess.zip`, [
+    prepared.pdb,
+    pose?.sdf ? { name: `${filenameStem(pose.name || "representative_pose")}.sdf`, text: pose.sdf } : null,
+    {
+      name: "preprocess_metadata.json",
+      text: JSON.stringify(preprocessVinaPocketMetadata(prepared), null, 2),
+    },
+  ]);
+  showToast("Selected pocket downloaded.");
+}
+
+async function prepareSelectedVinaPocket() {
+  const candidate = (state.vinaPocketResult?.candidates || []).find((item) => item.id === state.selectedVinaPocketId);
+  if (!candidate || !state.preprocessProtein) {
+    showToast("Select a Vina pocket candidate first.");
+    return null;
+  }
+  try {
+    const result = await service.preprocessPocketFromCenter({
+      pdb: state.preprocessProtein,
+      center: candidate.center,
+      radius: candidate.radius || 10,
+    });
+    return { ...result, candidate };
+  } catch (error) {
+    showToast(error.message);
+    return null;
+  }
+}
+
+function preprocessVinaPocketMetadata(prepared) {
+  const result = state.vinaPocketResult || {};
+  return {
+    workflow: "protein_without_reference_ligand_vina_panel",
+    source_protein: state.preprocessProtein?.name || null,
+    source_panel: state.preprocessPanel?.name || null,
+    selected_candidate: prepared.candidate,
+    pocket: prepared.metadata || {},
+    vina_panel: result.vina_panel || {},
+    warnings: result.warnings || [],
+  };
+}
+
+async function renderSelectedVinaPocketPreview() {
+  const candidate = (state.vinaPocketResult?.candidates || []).find((item) => item.id === state.selectedVinaPocketId);
+  if (!candidate || !state.preprocessProtein) return;
+  try {
+    const pocket = await service.preprocessPocketFromCenter({
+      pdb: state.preprocessProtein,
+      center: candidate.center,
+      radius: candidate.radius || 10,
+    });
+    const poseText = candidate.representative_pose?.sdf;
+    const molecule = poseText
+      ? { id: candidate.representative_pose.name || "Representative pose", name: candidate.representative_pose.name || "pose.sdf", text: poseText }
+      : centerMarkerMolecule(candidate);
+    await renderPreprocessViewer({
+      title: candidate.label || candidate.id,
+      pdb: pocket.pdb,
+      sdf: molecule,
+    });
+  } catch (error) {
+    const container = $("#preprocess-main-viewer-3d");
+    if (container) container.innerHTML = `<div class="viewer-error">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function centerMarkerMolecule(candidate) {
+  const center = candidate.center || { x: 0, y: 0, z: 0 };
+  const sdf = `Pocket center\n  conDitar GUI\n\n  1  0  0  0  0  0            999 V2000\n${sdfCoord(center.x)}${sdfCoord(center.y)}${sdfCoord(center.z)} C   0  0  0  0  0  0  0  0  0  0  0  0\nM  END\n$$$$\n`;
+  return { id: "Pocket center", name: "pocket_center.sdf", text: sdf };
+}
+
+function sdfCoord(value) {
+  return Number(value || 0).toFixed(4).padStart(10, " ");
+}
+
+function buildPreprocessManifest(entry, variant, staged) {
+  const sourceFiles = entry?.sourceFiles || {};
+  const metadata = variant?.metadata || entry?.metadata || {};
+  const structuredWarnings = preprocessWarningObjects(metadata);
+  return {
+    schema_version: 1,
+    created_at: new Date().toISOString(),
+    workflow: entry?.contextType || entry?.mode || "manual",
+    source: entry?.source || metadata.provenance || null,
+    set: entry?.groupLabel || null,
+    selected_variant: variant ? {
+      id: variant.id || null,
+      label: variant.label || null,
+      mode: variant.mode || staged?.mode || null,
+      center: variant.center || null,
+      radius: variant.radius || metadata.radius || null,
+    } : null,
+    source_files: {
+      complex: sourceFiles.complex || null,
+      protein: sourceFiles.protein || null,
+      ligand: sourceFiles.ligand || null,
+      pocket: sourceFiles.pocket || null,
+      panel: sourceFiles.panel || null,
+      residues: sourceFiles.residues || null,
+    },
+    staged_inputs: {
+      mode: staged?.mode || null,
+      pdb: staged?.pdb?.name || null,
+      sdf: staged?.sdf?.name || null,
+    },
+    preprocessing: {
+      method: metadata.method || entry?.contextType || entry?.mode || null,
+      radius: metadata.radius || variant?.radius || null,
+      residue_count: metadata.residue_count || null,
+      atom_count: metadata.atom_count || null,
+      residues: metadata.residues || null,
+      warnings: structuredWarnings.map(warningText),
+      structured_warnings: structuredWarnings,
+      details: metadata,
+    },
+  };
+}
+
+function preprocessWarningObjects(metadata = {}) {
+  const warnings = [
+    ...(metadata.structured_warnings || []),
+    ...(metadata.warnings || []),
+  ];
+  const residueCount = Number(metadata.residue_count);
+  if (Number.isFinite(residueCount) && residueCount > 0 && !warnings.some((item) => warningText(item).includes("fewer than"))) {
+    if (residueCount < 10) {
+      warnings.push({
+        code: "pocket_lt_10_residues",
+        severity: "warning",
+        title: "Pocket size",
+        text: `Pocket has ${residueCount} complete residues. More than 10-20 residues is advised for stable generation/scoring.`,
+        appliesTo: "pocket",
+      });
+    } else if (residueCount < 20) {
+      warnings.push({
+        code: "pocket_lt_20_residues",
+        severity: "warning",
+        title: "Pocket size",
+        text: `Pocket has ${residueCount} complete residues. More than 20 residues is advised when possible.`,
+        appliesTo: "pocket",
+      });
+    }
+  }
+  const seen = new Set();
+  return warnings
+    .map((warning) => normalizeWorkflowWarning(warning, { code: "pocket_warning", title: "Pocket size", appliesTo: "pocket" }))
+    .filter((warning) => {
+      const key = `${warning.code}:${warning.text}`;
+      if (!warning.text || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function renderSetupPreprocessSummary() {
+  const panel = $("#setup-staged-summary");
+  if (!panel) return;
+  const manifest = state.stagedPreprocessManifest;
+  if (!manifest) {
+    panel.hidden = true;
+    $("#setup-staged-grid").innerHTML = "";
+    $("#setup-staged-provenance").textContent = "";
+    return;
+  }
+  const workflow = manifest.workflow || "preprocess";
+  const staged = manifest.staged_inputs || {};
+  const selected = manifest.selected_variant || {};
+  const prep = manifest.preprocessing || {};
+  $("#setup-staged-title").textContent = `Staged from ${workflowLabel(workflow)}`;
+  $("#setup-staged-mode").textContent = preparedModeLabel(staged.mode);
+  const rows = [
+    ["View", selected.label || null],
+    ["Source", manifest.set || manifest.source || null],
+    ["PDB", staged.pdb || null],
+    ["SDF", staged.sdf || "none"],
+    ["Radius", selected.radius || prep.radius ? `${selected.radius || prep.radius} A` : null],
+    ["Residues", prep.residue_count ? String(prep.residue_count) : null],
+    ["Warnings", (prep.structured_warnings || prep.warnings || []).length ? (prep.structured_warnings || prep.warnings || []).map(warningText).join("; ") : null],
+  ].filter(([, value]) => value !== null && value !== "");
+  $("#setup-staged-grid").innerHTML = rows.map(([label, value]) => `
+    <div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>
+  `).join("");
+  $("#setup-staged-provenance").textContent = JSON.stringify(manifest, null, 2);
+  panel.hidden = false;
+}
+
+function workflowLabel(workflow) {
+  return String(workflow || "preprocess")
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function stagePreparedInputs({ mode, pdb, sdf, label, detail, preprocessManifest = null }) {
+  const isShapeInput = mode === "shape";
+  clearLoadedStudyForCustomInput();
+  state.customPdb = pdb;
+  state.customSdf = sdf;
+  state.stagedPreprocessManifest = preprocessManifest;
+  state.batchInputs = [];
+  if (isShapeInput) setEngine("diffsmol");
+  setMode(isShapeInput ? "reference" : mode, false);
+  $("#pdb-name").textContent = pdb?.name || "No protein staged";
+  $("#pdb-detail").textContent = pdb ? (detail || "Prepared input") : "DiffSMol ligand-shape input";
+  $("#sdf-name").textContent = sdf?.name || "No reference SDF";
+  const heavyAtoms = sdf?.text ? sdfHeavyAtomCount(sdf.text) : 0;
+  $("#sdf-detail").textContent = isShapeInput
+    ? `Prepared shape reference ligand${heavyAtoms ? ` · ${heavyAtoms} heavy atoms` : ""}`
+    : sdf
+      ? `Prepared reference ligand${heavyAtoms ? ` · ${heavyAtoms} heavy atoms` : ""}`
+      : "Pocket mode uses the cropped PDB";
+  $("#example-select").value = "custom";
+  state.exampleId = "custom";
+  updateCustomOptionLabel(label || pdb?.name || sdf?.name);
+  updateBatchLabel();
+  renderSetupPreprocessSummary();
+  updateRunSummary();
+  renderPreparedStructureTray();
+  setActiveTab("setup");
+  renderPreprocessStagingStatus();
+  showToast(isShapeInput
+    ? (pdb ? "Pocket and reference ligand staged for DiffSMol." : "Reference ligand staged for DiffSMol.")
+    : mode === "reference" ? "Prepared protein and reference ligand staged." : "Prepared pocket staged.");
 }
 
 async function handleFolderUpload(event) {
@@ -2009,11 +3870,13 @@ async function handleFolderUpload(event) {
   try {
     const grouped = await groupBatchFiles(files);
     state.batchInputs = grouped;
+    state.stagedPreprocessManifest = null;
+    renderSetupPreprocessSummary();
     $("#example-select").value = "custom";
     state.exampleId = "custom";
     updateCustomOptionLabel(grouped.length === 1 ? grouped[0].name : `${grouped.length} folders`);
     updateBatchLabel();
-    updateCommand();
+    updateRunSummary();
     showToast(`${grouped.length} folder${grouped.length === 1 ? "" : "s"} ready for batch submission.`);
   } catch (error) {
     showToast(error.message);
@@ -2026,7 +3889,7 @@ function clearBatchSelection() {
   state.batchInputs = [];
   $("#folder-input").value = "";
   updateBatchLabel();
-  updateCommand();
+  updateRunSummary();
   showToast("Batch selection cleared. You can choose another folder or upload one input.");
 }
 
@@ -2042,32 +3905,38 @@ async function groupBatchFiles(files) {
   const jobs = [];
   const skipped = [];
   for (const [folder, folderFiles] of byFolder) {
-    const pdbFile = chooseInputFile(folderFiles, ".pdb", ["protein", "pocket"]);
+    const pdbFile = chooseStructureInputFile(folderFiles, ["protein", "pocket"]);
     const sdfFile = chooseInputFile(folderFiles, ".sdf", ["ligand", "reference", "ref"]);
-    if (!pdbFile) {
-      skipped.push(`${folder}: no PDB`);
+    if (state.engine !== "diffsmol" && !pdbFile) {
+      skipped.push(`${folder}: no PDB/CIF`);
       continue;
     }
-    const pdbText = await readValidatedTextFile(pdbFile, "pdb", false);
+    const pdbText = pdbFile ? await readValidatedTextFile(pdbFile, "pdb", false) : null;
     const sdfText = sdfFile ? await readValidatedTextFile(sdfFile, "sdf", false) : null;
-    if (!pdbText) {
-      skipped.push(`${folder}: invalid PDB`);
+    if (sdfText && countSdfMolecules(sdfText) !== 1) {
+      skipped.push(`${folder}: SDF must contain one reference ligand, not a ligand database`);
       continue;
     }
-    if (state.mode === "reference" && !sdfText) {
+    if (state.engine !== "diffsmol" && !pdbText) {
+      skipped.push(`${folder}: invalid PDB/CIF`);
+      continue;
+    }
+    if ((state.mode === "reference" || state.engine === "diffsmol") && !sdfText) {
       skipped.push(`${folder}: no valid SDF`);
       continue;
     }
     jobs.push({
       name: folder,
-      pdb: { name: pdbFile.name, text: pdbText },
+      pdb: pdbText ? { name: pdbFile.name, text: pdbText } : null,
       sdf: sdfText ? { name: sdfFile.name, text: sdfText } : null,
     });
   }
   if (!jobs.length) {
-    throw new Error(state.mode === "reference"
-      ? "No valid batch folders found. Each folder needs a PDB and SDF in reference mode."
-      : "No valid batch folders found. Each folder needs a PDB.");
+    throw new Error(state.engine === "diffsmol"
+      ? "No valid batch folders found. Each DiffSMol folder needs a 3D SDF reference ligand."
+      : state.mode === "reference"
+      ? "No valid batch folders found. Each folder needs a PDB/CIF and SDF in reference mode."
+      : "No valid batch folders found. Each folder needs a PDB/CIF.");
   }
   if (skipped.length) {
     showToast(`${jobs.length} folder${jobs.length === 1 ? "" : "s"} ready; ${skipped.length} skipped.`);
@@ -2086,18 +3955,174 @@ function chooseInputFile(files, extension, preferredTokens = []) {
   return preferred || candidates.find((file) => !file.name.toLowerCase().includes("generated")) || candidates[0];
 }
 
+function chooseStructureInputFile(files, preferredTokens = []) {
+  const candidates = files.filter((file) => isStructureFilename(file.name));
+  if (!candidates.length) return null;
+  const preferred = candidates.find((file) => {
+    const name = file.name.toLowerCase();
+    return preferredTokens.some((token) => name.includes(token)) && !name.includes("generated");
+  });
+  return preferred || candidates.find((file) => !file.name.toLowerCase().includes("generated")) || candidates[0];
+}
+
 async function readValidatedTextFile(file, kind, showError = true) {
   const text = await file.text();
   const lower = file.name.toLowerCase();
-  const validExtension = kind === "pdb" ? lower.endsWith(".pdb") : lower.endsWith(".sdf");
+  const validExtension = kind === "pdb" ? isStructureFilename(lower) : lower.endsWith(".sdf");
   const validContent = kind === "pdb"
-    ? text.split(/\r?\n/, 200).some((line) => /^(ATOM  |HETATM|MODEL |HEADER|CRYST1)/.test(line))
-    : text.includes("$$$$");
+    ? looksLikeStructureText(text)
+    : looksLikeSdfText(text);
   if (!validExtension || !validContent) {
-    if (showError) showToast(`${file.name} does not look like a valid ${kind.toUpperCase()} file.`);
+    if (showError) showToast(`${file.name} does not look like a valid ${kind === "pdb" ? "PDB/CIF" : kind.toUpperCase()} file.`);
     return null;
   }
-  return text;
+  return kind === "sdf" ? normalizeSdfText(text) : text;
+}
+
+function isStructureFilename(name) {
+  const lower = String(name || "").toLowerCase();
+  return lower.endsWith(".pdb") || lower.endsWith(".ent") || lower.endsWith(".cif") || lower.endsWith(".mmcif");
+}
+
+function looksLikeStructureText(text) {
+  return text.split(/\r?\n/, 200).some((line) => {
+    const trimmed = line.trim();
+    return /^(ATOM  |HETATM|MODEL |HEADER|CRYST1)/.test(line)
+      || trimmed.startsWith("data_")
+      || trimmed.startsWith("_atom_site.")
+      || trimmed === "loop_";
+  });
+}
+
+function looksLikeSdfText(text) {
+  const body = String(text || "");
+  if (body.includes("$$$$")) return true;
+  return /\bV(2000|3000)\b/.test(body) && /^\s*M\s+END\s*$/m.test(body);
+}
+
+function normalizeSdfText(text) {
+  const body = String(text || "").replace(/\s+$/g, "");
+  return body.includes("$$$$") ? `${body}\n` : `${body}\n$$$$\n`;
+}
+
+async function readLigandPanelFile(file) {
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith(".sdf")) {
+    const text = await readValidatedTextFile(file, "sdf");
+    return text ? { name: file.name, text, count: countSdfMolecules(text), source: "SDF panel" } : null;
+  }
+  if (lower.endsWith(".csv")) {
+    const text = await file.text();
+    const rows = parseCsvRows(text);
+    if (!rows.length) throw new Error("CSV ligand panel is empty.");
+    const headers = rows[0].map((item) => item.trim());
+    const smilesIndex = headers.findIndex((header) => ["smiles", "smile", "canonical_smiles", "isomeric_smiles"].includes(header.toLowerCase()));
+    if (smilesIndex < 0) throw new Error("CSV ligand panel must include a smiles column.");
+    const nameIndex = headers.findIndex((header) => ["name", "id", "ligand", "compound", "compound_id"].includes(header.toLowerCase()));
+    const ligands = rows.slice(1)
+      .map((row, index) => ({
+        smiles: (row[smilesIndex] || "").trim(),
+        name: (nameIndex >= 0 ? row[nameIndex] : "")?.trim() || `ligand_${index + 1}`,
+      }))
+      .filter((item) => item.smiles);
+    if (!ligands.length) throw new Error("CSV ligand panel has no SMILES values.");
+    const sdf = await smilesRowsToSdf(ligands);
+    return {
+      name: file.name.replace(/\.csv$/i, ".sdf"),
+      text: sdf.text,
+      count: sdf.count,
+      source: `${file.name} CSV`,
+    };
+  }
+  showToast(`${file.name} must be an SDF or CSV ligand panel.`);
+  return null;
+}
+
+function parseCsvRows(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+    if (quoted) {
+      if (char === "\"" && next === "\"") {
+        cell += "\"";
+        i += 1;
+      } else if (char === "\"") {
+        quoted = false;
+      } else {
+        cell += char;
+      }
+    } else if (char === "\"") {
+      quoted = true;
+    } else if (char === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (char === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else if (char !== "\r") {
+      cell += char;
+    }
+  }
+  row.push(cell);
+  rows.push(row);
+  return rows.filter((items) => items.some((item) => item.trim()));
+}
+
+async function smilesRowsToSdf(ligands) {
+  const RDKit = await waitForRDKit();
+  const blocks = [];
+  const failures = [];
+  ligands.slice(0, 250).forEach((ligand, index) => {
+    let mol = null;
+    try {
+      mol = RDKit.get_mol(ligand.smiles);
+      if (!mol) throw new Error("RDKit could not parse SMILES.");
+      const molblock = mol.get_molblock();
+      if (!molblock || !molblock.includes("M  END")) throw new Error("RDKit could not create a mol block.");
+      blocks.push(`${ligand.name || `ligand_${index + 1}`}\n${molblock.split(/\r?\n/).slice(1).join("\n")}\n>  <SMILES>\n${ligand.smiles}\n\n$$$$`);
+    } catch (error) {
+      failures.push(`${ligand.name || `ligand_${index + 1}`}: ${error.message}`);
+    } finally {
+      if (mol?.delete) mol.delete();
+    }
+  });
+  if (!blocks.length) throw new Error(`No CSV SMILES could be converted to SDF. ${failures[0] || ""}`.trim());
+  if (failures.length) showToast(`${failures.length} CSV ligand${failures.length === 1 ? "" : "s"} could not be converted.`);
+  return { text: `${blocks.join("\n")}\n`, count: blocks.length };
+}
+
+async function waitForRDKit() {
+  if (typeof window.initRDKitModule !== "function") {
+    throw new Error("RDKit is still loading. Try the CSV panel again in a moment.");
+  }
+  if (!window._conditarRDKitPromise) {
+    window._conditarRDKitPromise = window.initRDKitModule();
+  }
+  return window._conditarRDKitPromise;
+}
+
+function countSdfMolecules(text) {
+  return text.split("$$$$").filter((block) => block.trim()).length;
+}
+
+function sdfHeavyAtomCount(text) {
+  const block = String(text || "").split("$$$$")[0] || "";
+  const lines = block.split(/\r?\n/);
+  const counts = lines[3] || "";
+  const atomCount = Number.parseInt(counts.slice(0, 3).trim(), 10);
+  if (!Number.isFinite(atomCount) || atomCount <= 0) return 0;
+  let heavyAtoms = 0;
+  for (const line of lines.slice(4, 4 + atomCount)) {
+    const symbol = line.slice(31, 34).trim() || line.trim().split(/\s+/)[3] || "";
+    if (symbol && symbol.toUpperCase() !== "H") heavyAtoms += 1;
+  }
+  return heavyAtoms;
 }
 
 function updateBatchLabel() {
@@ -2124,7 +4149,7 @@ function updateBatchLabel() {
   $("#folder-name").textContent = count ? `${count} batch folder${count === 1 ? "" : "s"}` : "Batch folders";
   $("#folder-detail").textContent = count
     ? `Generate will submit ${count} ${batchKind} job${count === 1 ? "" : "s"}`
-    : "Optional: one PDB and optional SDF per folder";
+    : state.engine === "diffsmol" ? "Optional: one SDF per folder" : "Optional: one PDB and optional SDF per folder";
   $("#batch-mode-banner").hidden = !count;
   $("#batch-mode-banner").classList.toggle("is-warning", Boolean(count && !isSlurmGpu && !isOpenShiftJob && !isOpenShiftMock));
   $("#batch-mode-title").textContent = batchTitle;
@@ -2133,7 +4158,7 @@ function updateBatchLabel() {
     : "Each selected folder will submit as a separate job.";
   $("#preview-run span").textContent = count
     ? `Submit ${count} batch job${count === 1 ? "" : "s"}`
-    : "Generate molecules";
+    : state.engine === "diffsmol" ? "Generate shape analogs" : "Generate molecules";
   updateRunEstimate();
 }
 
@@ -2172,9 +4197,10 @@ async function downloadAll() {
   button.textContent = "Packaging...";
   const exportMetadata = buildExportMetadata(candidates);
   let archiveNotice = "The archive will be saved by your browser to its Downloads folder.";
-  if (state.resultSource === "job" && state.selectedJob?.id) {
+  const job = loadedResultsJob();
+  if (job?.id) {
     try {
-      const saved = await service.exportJob(state.selectedJob.id, {
+      const saved = await service.exportJob(job.id, {
         selected_paths: candidates.map((item) => item.path).filter(Boolean),
         filters: exportMetadata.filters,
         tool_runs: exportMetadata.tool_runs,
@@ -2188,10 +4214,14 @@ async function downloadAll() {
   }
   const zip = new window.JSZip();
   const structures = zip.folder("generated_structures");
-  candidates.forEach((item) => structures.file(item.name, item.text));
+  candidates.forEach((item) => {
+    const path = job && item.path?.startsWith("outputs/") ? item.path.slice("outputs/".length) : item.name;
+    structures.file(path, item.text);
+  });
   zip.file("metrics.csv", csvText(candidates));
   zip.file("run_config.json", JSON.stringify(exportMetadata.run_config, null, 2));
   zip.file("export_metadata.json", JSON.stringify(exportMetadata, null, 2));
+  zip.file("run_manifest.json", JSON.stringify(buildRunManifest(candidates, exportMetadata), null, 2));
   if (state.study.logs?.stdout) zip.file("logs/stdout.log", state.study.logs.stdout);
   if (state.study.logs?.stderr) zip.file("logs/stderr.log", state.study.logs.stderr);
   if (state.study.logs?.extra) zip.file("logs/additional_logs.txt", state.study.logs.extra);
@@ -2206,19 +4236,24 @@ async function downloadAll() {
   updateExportScope();
 }
 
+function loadedResultsJob() {
+  return state.resultSource === "job" ? state.study?.loadedJob || null : null;
+}
+
 function buildConfiguration() {
-  const job = state.resultSource === "job" ? state.selectedJob || state.currentJob : null;
-  const example = state.study?.example || EXAMPLES[state.exampleId];
+  const job = loadedResultsJob();
   const mode = job?.mode || state.mode;
+  const pdbInput = setupPdbInput();
+  const sdfInput = setupSdfInput();
   return {
     interface_version: "0.1.0",
     backend_connected: true,
     job_id: job?.id || null,
     conditioning_mode: mode,
     inputs: {
-      pdb_filename: job ? (job.inputs?.pdb ? filenameOnly(job.inputs.pdb) : example?.pdb || null) : state.customPdb?.name || example?.pdb || null,
+      pdb_filename: job ? (job.inputs?.pdb ? filenameOnly(job.inputs.pdb) : null) : pdbInput?.name || null,
       sdf_filename: mode === "reference"
-        ? (job ? (job.inputs?.sdf ? filenameOnly(job.inputs.sdf) : example?.sdf || null) : state.customSdf?.name || example?.sdf || null)
+        ? (job ? (job.inputs?.sdf ? filenameOnly(job.inputs.sdf) : null) : sdfInput?.name || null)
         : null,
     },
     parameters: { ...(job?.parameters || state.parameters) },
@@ -2233,13 +4268,57 @@ function buildConfiguration() {
 function buildExportMetadata(candidates = exportCandidates()) {
   return {
     created_at: new Date().toISOString(),
-    job_id: state.selectedJob?.id || null,
+    job_id: loadedResultsJob()?.id || null,
     selected_count: candidates.length,
     total_count: state.study?.candidates?.length || 0,
     selected_candidates: candidates.map((item) => ({ id: item.id, name: item.name, path: item.path || item.name })),
     filters: activeExportFilters(),
-    tool_runs: state.study?.toolRuns || state.selectedJob?.tool_runs || [],
+    tool_runs: state.study?.toolRuns || loadedResultsJob()?.tool_runs || [],
     run_config: buildConfiguration(),
+  };
+}
+
+function buildRunManifest(candidates = exportCandidates(), exportMetadata = buildExportMetadata(candidates)) {
+  const job = loadedResultsJob();
+  const inputPdb = job?.inputs?.pdb ? filenameOnly(job.inputs.pdb) : state.study?.example?.pdb || null;
+  const inputSdf = job?.inputs?.sdf ? filenameOnly(job.inputs.sdf) : state.study?.example?.sdf || null;
+  return {
+    schema_version: 1,
+    created_at: new Date().toISOString(),
+    job: job ? {
+      id: job.id || null,
+      engine: job.engine || "conditar",
+      mode: job.mode || null,
+      target: job.target || null,
+      status: job.status || null,
+      created_at: job.created_at || null,
+      started_at: job.started_at || null,
+      finished_at: job.finished_at || null,
+    } : null,
+    inputs: {
+      pdb: inputPdb,
+      sdf: inputSdf,
+      preprocess_metadata: job?.inputs?.preprocess_metadata ? filenameOnly(job.inputs.preprocess_metadata) : null,
+    },
+    preprocess: job?.preprocess || null,
+    parameters: job?.parameters || state.parameters || {},
+    postprocess: job?.postprocess || {},
+    container: job?.container || {},
+    command: job?.command || [],
+    outputs: {
+      generated_sdfs: candidates.map((item) => ({
+        id: item.id,
+        name: item.name,
+        relative_path: item.path || item.name,
+      })),
+      artifacts: state.study?.artifacts || [],
+    },
+    export: {
+      selected_count: candidates.length,
+      total_count: state.study?.candidates?.length || 0,
+      filters: exportMetadata.filters || [],
+      metadata: exportMetadata,
+    },
   };
 }
 
@@ -2291,7 +4370,22 @@ function updateExportScope() {
   const filtered = $("#export-filtered")?.checked;
   if ($("#export-scope-count")) $("#export-scope-count").textContent = `(${count} of ${total} candidates)`;
   if ($("#download-all")) $("#download-all").firstChild.textContent = filtered ? "Download filtered " : "Download all ";
+  renderExportManifestSummary(count, total);
   updateExportFilterStatus();
+}
+
+function renderExportManifestSummary(selectedCount = exportCandidates().length, total = state.study?.candidates?.length || 0) {
+  const container = $("#export-manifest-summary");
+  if (!container) return;
+  const job = loadedResultsJob();
+  const rows = state.study ? [
+    ["Manifest", "run_manifest.json"],
+    ["Engine", job ? engineLabel(job) : state.engine === "diffsmol" ? "DiffSMol" : "conDitar"],
+    ["Selected", `${selectedCount}/${total} candidates`],
+    ["Includes", "inputs, command, container, logs"],
+  ] : [];
+  container.hidden = !rows.length;
+  container.innerHTML = rows.map(([label, value]) => provenanceItem(label, value)).join("");
 }
 
 function csvCell(value) {
@@ -2307,6 +4401,10 @@ function filenameOnly(path) {
   return String(path || "").split("/").pop() || "conditar_input";
 }
 
+function filenameStem(path) {
+  return filenameOnly(path).replace(/\.[^.]+$/, "") || "conditar_input";
+}
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
@@ -2315,6 +4413,30 @@ function escapeHtml(value) {
     "\"": "&quot;",
     "'": "&#39;",
   }[char]));
+}
+
+async function downloadPreparedArchive(filename, files) {
+  const validFiles = files.filter((file) => file?.text);
+  if (!validFiles.length) {
+    showToast("No prepared files are available to download.");
+    return;
+  }
+  if (!window.JSZip) {
+    validFiles.forEach((file) => downloadBlob(file.text, file.name, contentTypeForFilename(file.name)));
+    return;
+  }
+  const zip = new window.JSZip();
+  validFiles.forEach((file) => zip.file(filenameOnly(file.name), file.text));
+  const blob = await zip.generateAsync({ type: "blob" });
+  downloadBlob(blob, filename, "application/zip");
+}
+
+function contentTypeForFilename(filename) {
+  const lower = String(filename || "").toLowerCase();
+  if (lower.endsWith(".pdb") || lower.endsWith(".ent")) return "chemical/x-pdb";
+  if (lower.endsWith(".sdf")) return "chemical/x-mdl-sdfile";
+  if (lower.endsWith(".json")) return "application/json";
+  return "text/plain";
 }
 
 function downloadBlob(content, filename, type) {
@@ -2335,6 +4457,8 @@ function setLoading(loading) {
 function showToast(message, duration = 3400) {
   const toast = $("#toast");
   toast.textContent = message;
+  toast.classList.remove("show");
+  void toast.offsetWidth;
   toast.classList.add("show");
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.remove("show"), duration);

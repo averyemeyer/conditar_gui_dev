@@ -58,11 +58,14 @@ def describe() -> dict:
 
 
 def run(job_root: str, run_root: str, options: dict) -> dict:
+    available, error = _dependency_status()
+    if not available:
+        raise RuntimeError(error or "MedChem Filters dependencies are unavailable.")
     mc, chem = _import_dependencies()
     evaluators = _build_evaluators(mc)
     job_path = Path(job_root)
     run_path = Path(run_root)
-    sdf_paths = sorted((job_path / "outputs").rglob("*.sdf"))
+    sdf_paths = [path for path in sorted((job_path / "outputs").rglob("*.sdf")) if path.name.lower() != "reference.sdf"]
     if not sdf_paths:
         raise RuntimeError("No generated SDF files were found for this job.")
 
@@ -116,6 +119,7 @@ def run(job_root: str, run_root: str, options: dict) -> dict:
 
     summary = {
         "molecules": len(sdf_paths),
+        "generated_sdfs": [str(path.relative_to(job_path)) for path in sdf_paths],
         "parsed": len(records),
         "filters": [{"property": name, "label": label} for name, label, _, _ in FILTERS],
         "all_passed": sum(1 for item in records if item["passed"] == len(FILTERS)),
@@ -124,15 +128,23 @@ def run(job_root: str, run_root: str, options: dict) -> dict:
         "options": options,
     }
     (run_path / "summary.json").write_text(json.dumps(summary, indent=2))
+    if errors:
+        raise RuntimeError(f"MedChem Filters could not evaluate {len(errors)} molecule(s). See {run_path / 'summary.json'}.")
     return summary
 
 
 def _dependency_status() -> tuple[bool, str | None]:
     try:
         _import_dependencies()
-        return True, None
     except Exception as error:
         return False, f"Install the GUI Tool Chest environment with ./setup_tool_chest.sh. Missing medchem dependency: {error}"
+    try:
+        from medchem.structural.lilly_demerits._demerits import find_lilly_binaries
+
+        find_lilly_binaries()
+    except Exception as error:
+        return False, f"Install the compatible Lilly tools with `medchem install-lilly`: {error}"
+    return True, None
 
 
 def _import_dependencies():

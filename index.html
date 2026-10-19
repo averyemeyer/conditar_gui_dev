@@ -10,7 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="icon" type="image/png" href="./media/logo/conditar-logo-highres-transparent.png">
   <link rel="apple-touch-icon" href="./media/logo/conditar-logo-highres-transparent.png">
-  <link rel="stylesheet" href="./src/styles.css?v=20260723-theme-1">
+  <link rel="stylesheet" href="./vendor/molstar/molstar.css">
+  <link rel="stylesheet" href="./src/styles.css?v=20261002-viewer-overlay-1">
 </head>
 <body>
   <div class="app-shell">
@@ -56,16 +57,150 @@
       </section>
 
       <nav class="workflow-nav" aria-label="Workflow">
-        <button class="workflow-step active" data-section="setup">Setup</button>
+        <button class="workflow-step active" data-section="preprocess">Preprocess</button>
+        <button class="workflow-step" data-section="setup">Setup</button>
         <button class="workflow-step" data-section="jobs">Jobs</button>
         <button class="workflow-step" data-section="results">Results</button>
+        <button class="workflow-step" data-section="viewer">Viewer</button>
         <button class="workflow-step" data-section="export">Export</button>
         <button class="workflow-step" data-section="help">Help</button>
       </nav>
 
-      <section id="setup-section" class="workspace-section">
+      <section id="preprocess-section" class="workspace-section">
         <div class="section-heading">
-          <div><p class="eyebrow">Step 1</p><h2>Set up a run</h2></div>
+          <div><p class="eyebrow">Prepare inputs</p><h2>Target workbench</h2></div>
+          <p>Start with a bound complex when you have one; use residues when you know the site, or a docking panel when you do not.</p>
+        </div>
+        <div class="preprocess-workbench">
+          <div class="preprocess-viewer-column">
+            <article class="panel preprocess-main-viewer-panel empty-viewer">
+              <div class="viewer-header compact-viewer-header">
+                <div><p class="eyebrow">Active target</p><h3 id="preprocess-main-viewer-title">Load a target or candidate input</h3></div>
+                <span id="preprocess-staged-status" class="staged-status-pill">Nothing staged</span>
+              </div>
+              <div class="viewer-quick-controls" id="preprocess-viewer-controls" hidden></div>
+              <div class="viewer-stage preprocess-main-viewer-stage">
+                <div class="pocket-preview-3d" id="preprocess-main-viewer-3d"></div>
+                <div class="viewer-loading" id="preprocess-main-viewer-loading" hidden><span></span>Loading structure</div>
+              </div>
+            </article>
+
+            <article class="panel preprocess-workbench-panel">
+              <div class="panel-heading"><div><h3>Candidate inputs</h3></div><span id="prepared-structure-count" class="required-label">0 candidates</span></div>
+              <div class="prepared-structure-tray" id="prepared-structure-tray">
+                <p class="field-note">Candidate protein, pocket, and ligand sets appear here.</p>
+              </div>
+            </article>
+          </div>
+
+          <div class="preprocess-control-column">
+            <div class="preprocess-grid">
+          <details class="panel preprocess-panel preprocess-method" open>
+            <summary class="preprocess-method-summary"><span><strong>1. Bound complex</strong><small>Best when you have a protein-ligand structure</small></span><b>Bound ligand</b></summary>
+            <div class="dropzone">
+              <input id="preprocess-complex-input" type="file" accept=".pdb,.ent,.cif,.mmcif">
+              <div class="file-icon accent">PDB</div>
+              <div><strong id="preprocess-complex-name">Choose protein-ligand complex</strong><span id="preprocess-complex-detail">Split reference ligand and crop pocket</span></div>
+              <button class="text-button" id="preprocess-refresh-complex" type="button">Choose complex</button>
+            </div>
+            <div class="complex-picker" id="preprocess-complex-picker" hidden>
+              <label class="field-label" for="preprocess-ligand-select">Reference ligand</label>
+              <div class="complex-picker-row">
+                <select id="preprocess-ligand-select"></select>
+                <button class="secondary-button compact-action" id="preprocess-apply-ligand" type="button">Use ligand</button>
+              </div>
+            </div>
+            <div class="preprocess-options complex-pocket-options">
+              <div class="method-heading"><strong>Pocket crop</strong><span>Bound ligand</span></div>
+              <div class="preprocess-option-grid">
+                <label>Radius Angstrom<input id="preprocess-complex-radius" type="number" min="1" step="0.5" value="10"></label>
+              </div>
+            </div>
+            <div class="prepared-output" id="preprocess-complex-output" hidden>
+              <strong id="preprocess-complex-output-title">Bound-complex context</strong>
+              <div class="prepared-output-grid" id="preprocess-complex-output-grid"></div>
+              <div class="prepared-meta" id="preprocess-complex-meta"></div>
+              <div class="prepared-actions">
+                <button class="secondary-button" id="preprocess-preview-reference" type="button">Preview full pair</button>
+                <button class="secondary-button" id="preprocess-preview-ligand" type="button">Preview ligand</button>
+                <button class="secondary-button" id="preprocess-preview-pocket" type="button">Preview pocket</button>
+                <button class="secondary-button" id="preprocess-download-complex" type="button">Download prepared files</button>
+                <button class="primary-button" id="preprocess-use-reference" type="button"><span>Stage protein + reference ligand</span><b>→</b></button>
+                <button class="secondary-button" id="preprocess-use-ligand" type="button">Stage ligand for DiffSMol</button>
+                <button class="secondary-button" id="preprocess-use-pocket" type="button">Stage cropped pocket</button>
+              </div>
+            </div>
+          </details>
+
+              <details class="panel preprocess-panel preprocess-method">
+                <summary class="preprocess-method-summary"><span><strong>2. Target / known site</strong><small>Use this when you already know the pocket residues</small></span><b>Residues</b></summary>
+                <div class="dropzone">
+                  <input id="preprocess-target-input" type="file" accept=".pdb,.ent,.cif,.mmcif">
+                  <div class="file-icon">PDB</div>
+                  <div><strong id="preprocess-target-name">Choose target protein</strong><span id="preprocess-target-detail">Use this when you already know the pocket residues</span></div>
+                  <button class="text-button" id="preprocess-refresh-target" type="button">Choose target</button>
+                </div>
+                <div class="preprocess-options manual-pocket-panel">
+                  <div class="method-heading"><strong>Residue-defined pocket</strong><span>Known site</span></div>
+                  <div class="preprocess-option-grid">
+                    <label>Residues<input id="manual-residue-spec" type="text" placeholder="A:45-62, A:88, B:101"></label>
+                    <label>Expand Angstrom<input id="manual-residue-radius" type="number" min="0" step="0.5" placeholder="exact"></label>
+                  </div>
+                  <div class="prepared-actions">
+                    <button class="secondary-button" id="preprocess-preview-residue-pocket" type="button"><span>Preview pocket</span></button>
+                    <button class="primary-button" id="preprocess-build-residue-pocket" type="button"><span>Save pocket candidate</span><b>→</b></button>
+                  </div>
+                </div>
+              </details>
+
+          <details class="panel preprocess-panel preprocess-method">
+            <summary class="preprocess-method-summary"><span><strong>3. Docking panel</strong><small>Use this when you do not have a reference ligand</small></span><b>No ligand</b></summary>
+            <div class="dropzone">
+              <input id="preprocess-protein-input" type="file" accept=".pdb,.ent,.cif,.mmcif">
+              <div class="file-icon">PDB</div>
+              <div><strong id="preprocess-protein-name">Choose receptor protein</strong><span id="preprocess-protein-detail">Defaults to active target</span></div>
+              <button class="text-button" id="preprocess-refresh-protein" type="button">Choose protein</button>
+            </div>
+            <div class="dropzone">
+              <input id="preprocess-panel-input" type="file" accept=".sdf,.csv">
+              <div class="file-icon accent">SDF</div>
+              <div><strong id="preprocess-panel-name">Choose ligand panel</strong><span id="preprocess-panel-detail">SDF or CSV with smiles</span></div>
+              <button class="text-button" id="preprocess-refresh-panel" type="button">Choose panel</button>
+            </div>
+            <details class="preprocess-options">
+              <summary><strong>Vina settings</strong><span>Optional search box</span></summary>
+              <div class="preprocess-option-grid">
+                <label>Center X<input id="vina-panel-center-x" type="number" step="0.1" placeholder="auto"></label>
+                <label>Center Y<input id="vina-panel-center-y" type="number" step="0.1" placeholder="auto"></label>
+                <label>Center Z<input id="vina-panel-center-z" type="number" step="0.1" placeholder="auto"></label>
+                <label>Size X<input id="vina-panel-size-x" type="number" step="0.1" placeholder="whole protein"></label>
+                <label>Size Y<input id="vina-panel-size-y" type="number" step="0.1" placeholder="whole protein"></label>
+                <label>Size Z<input id="vina-panel-size-z" type="number" step="0.1" placeholder="whole protein"></label>
+                <label>Max ligands<input id="vina-panel-max-ligands" type="number" min="1" value="10"></label>
+                <label>Exhaustiveness<input id="vina-panel-exhaustiveness" type="number" min="1" value="4"></label>
+              </div>
+            </details>
+            <div class="prepared-actions vina-panel-actions">
+              <button class="primary-button" id="preprocess-run-vina-panel" type="button"><span>Find candidate pockets</span><b>→</b></button>
+            </div>
+            <div class="prepared-output" id="vina-pocket-output" hidden>
+              <strong>Candidate pockets</strong>
+              <div class="prepared-meta" id="vina-pocket-meta"></div>
+              <div class="pocket-candidate-list" id="vina-pocket-candidates"></div>
+              <div class="prepared-actions">
+                <button class="secondary-button" id="preprocess-download-vina-pocket" type="button">Download selected pocket</button>
+                <button class="secondary-button" id="preprocess-use-vina-pocket" type="button">Stage selected pocket</button>
+              </div>
+            </div>
+          </details>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="setup-section" class="workspace-section" hidden>
+        <div class="section-heading">
+          <div><p class="eyebrow">Run setup</p><h2>Set up a run</h2></div>
         </div>
 
         <div class="batch-mode-banner" id="batch-mode-banner" hidden role="status">
@@ -76,6 +211,17 @@
         <div class="setup-grid">
           <article class="panel input-panel">
             <div class="panel-heading"><div><h3>Input structures</h3></div><span class="required-label">PDB required</span></div>
+            <label class="field-label">Generation engine</label>
+            <div class="engine-selector" role="group" aria-label="Generation engine">
+              <button class="engine-option active" type="button" data-engine="conditar">
+                <strong>conDitar</strong>
+                <span>Target-conditioned generation</span>
+              </button>
+              <button class="engine-option" type="button" data-engine="diffsmol">
+                <strong>DiffSMol</strong>
+                <span>Reference-ligand shape expansion</span>
+              </button>
+            </div>
             <div class="mode-toggle" role="group" aria-label="Conditioning mode">
               <button class="active" data-mode="reference">Protein + reference ligand</button>
               <button data-mode="pocket">Pocket only</button>
@@ -84,8 +230,19 @@
             <select id="example-select">
               <option value="custom" selected>Upload your own files</option>
             </select>
+            <div class="setup-staged-summary" id="setup-staged-summary" hidden>
+              <div class="setup-staged-heading">
+                <strong id="setup-staged-title">Staged from Preprocess</strong>
+                <span id="setup-staged-mode">Pocket</span>
+              </div>
+              <div class="setup-staged-grid" id="setup-staged-grid"></div>
+              <details class="setup-staged-details">
+                <summary>Provenance</summary>
+                <pre id="setup-staged-provenance"></pre>
+              </details>
+            </div>
             <div class="dropzone" id="pdb-dropzone">
-              <input id="pdb-input" type="file" accept=".pdb">
+              <input id="pdb-input" type="file" accept=".pdb,.ent,.cif,.mmcif">
               <div class="file-icon">PDB</div>
               <div><strong id="pdb-name">Choose a PDB file</strong><span id="pdb-detail">Required · uploaded with this job</span></div>
               <button class="text-button" id="refresh-pdb" type="button">Choose / refresh</button>
@@ -130,7 +287,7 @@
                     <div class="evaluation-heading">
                       <div>
                         <strong>Built-in metrics</strong>
-                        <small>Select generated-molecule properties to compute with each run.</small>
+                        <small id="builtin-evaluation-note">Select generated-molecule properties to compute with each run.</small>
                       </div>
                     </div>
                     <div class="evaluation-group no-border">
@@ -212,12 +369,13 @@
           </div>
           <pre id="job-log" class="job-log">No job submitted.</pre>
         </div>
+        <div class="setup-warning-banner" id="setup-warning-banner" hidden role="alert" aria-live="polite"></div>
         <div class="run-bar">
           <div>
             <strong>Ready to generate</strong>
             <span class="run-summary">Uploaded inputs are staged per job; outputs and logs are stored in that job's folder.</span>
+            <span class="run-summary run-evaluations" id="run-evaluations">This job will run: Vina score + minimize, QED, SA, LogP, Lipinski.</span>
             <span class="run-summary run-estimate" id="run-estimate">Estimate updates after you choose inputs.</span>
-            <code id="command-preview" hidden></code>
           </div>
           <button class="primary-button" id="preview-run"><span>Generate molecules</span><b>→</b></button>
         </div>
@@ -259,6 +417,7 @@
               <div><span>Runtime target</span><strong id="job-detail-target">Local CPU</strong></div>
               <div><span>Started</span><strong id="job-detail-started">-</strong></div>
             </div>
+            <div class="provenance-grid job-provenance-grid" id="job-detail-provenance"></div>
             <div id="job-detail-alert" class="job-detail-alert" hidden></div>
             <pre id="job-detail-log" class="job-log">Select a job to view logs.</pre>
           </article>
@@ -270,6 +429,9 @@
           <div><p class="eyebrow">Step 3</p><h2>Explore results</h2></div>
           <p id="results-source">Submit a job or load a completed job from Jobs to review generated outputs.</p>
         </div>
+
+        <div class="provenance-grid results-provenance-grid" id="results-provenance"></div>
+        <div class="setup-warning-banner" id="results-evaluation-warning" hidden role="alert"></div>
 
         <div class="metric-strip" id="metric-strip"></div>
 
@@ -346,10 +508,16 @@
             <div class="viewer-header">
               <div><p class="eyebrow">Selected candidate</p><h3 id="selected-name">Candidate 000</h3></div>
               <div class="viewer-actions">
+                <label class="viewer-reference-toggle" id="viewer-reference-control" hidden>
+                  <input id="viewer-reference-toggle" type="checkbox">
+                  <span class="viewer-reference-track" aria-hidden="true"></span>
+                  <span>Reference ligand</span>
+                </label>
                 <div class="view-toggle"><button class="active" data-view="3d">3D</button><button data-view="2d">2D</button></div>
                 <button class="icon-button" id="download-selected" aria-label="Download selected SDF">↓</button>
               </div>
             </div>
+            <div class="viewer-quick-controls" id="results-viewer-controls" hidden></div>
             <div class="viewer-stage">
               <div id="viewer-3d"></div>
               <div id="viewer-2d" hidden></div>
@@ -357,17 +525,31 @@
             </div>
             <div class="viewer-footer">
               <div class="selected-metrics" id="selected-metrics"></div>
-              <details class="viewer-options">
-                <summary>View options</summary>
-                <div class="viewer-controls">
-                  <label>Protein
-                    <select id="protein-style"><option value="cartoon">Cartoon</option><option value="line">Lines</option><option value="surface">Surface</option><option value="hidden">Hidden</option></select>
-                  </label>
-                  <label>Ligand
-                    <select id="ligand-style"><option value="stick">Sticks</option><option value="sphere">Spheres</option><option value="line">Lines</option></select>
-                  </label>
-                </div>
-              </details>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="viewer-section" class="workspace-section viewer-workspace-section" hidden>
+        <div class="section-heading viewer-workspace-heading">
+          <div><p class="eyebrow">Structure viewer</p><h2>Inspect molecule</h2></div>
+          <div class="viewer-workspace-controls">
+            <label>Molecule
+              <select id="viewer-molecule-select" class="compact-select"></select>
+            </label>
+            <button class="secondary-button compact-action" id="viewer-use-selected" type="button">Use selected</button>
+          </div>
+        </div>
+
+        <div class="molecule-viewer-grid">
+          <article class="panel viewer-panel large-viewer-panel">
+            <div class="viewer-header">
+              <div><p class="eyebrow">Current molecule</p><h3 id="viewer-workspace-title">Selected candidate</h3></div>
+            </div>
+            <div class="viewer-quick-controls" id="workspace-viewer-controls" hidden></div>
+            <div class="viewer-stage large-viewer-stage">
+              <div id="viewer-workspace-3d"></div>
+              <div class="viewer-loading" id="viewer-workspace-loading"><span></span>Loading structure</div>
             </div>
           </article>
         </div>
@@ -387,6 +569,7 @@
           </div>
         </div>
         <label class="export-scope"><input id="export-filtered" type="checkbox" checked> Export the selected subset <span id="export-scope-count"></span></label>
+        <div class="provenance-grid export-manifest-grid" id="export-manifest-summary"></div>
         <div class="export-selection-actions"><button class="secondary-button compact-action" id="select-all-candidates" type="button">Select all</button><button class="secondary-button compact-action" id="clear-candidate-selection" type="button">Clear selection</button><small>Use export requirements or candidate checkboxes to shape the selected set.</small></div>
       </section>
 
@@ -412,9 +595,9 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script async src="https://cdn.jsdelivr.net/npm/3dmol@2.4.2/build/3Dmol-min.js"></script>
+  <script async src="./vendor/molstar/molstar.js"></script>
   <script async src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script defer src="https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js"></script>
-  <script type="module" src="./src/app.js?v=20260723-theme-1"></script>
+  <script type="module" src="./src/app.js?v=20261002-viewer-overlay-1"></script>
 </body>
 </html>

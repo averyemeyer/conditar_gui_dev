@@ -1,185 +1,74 @@
-# conDitar GUI on OpenShift
+# OpenShift Deployment Reference
 
-This folder contains the OpenShift deployment files for the conDitar GUI.
-It deploys the web service, creates persistent job storage, exposes a Route,
-and can launch generator pods as OpenShift Jobs. The GUI image can either be
-prebuilt and supplied with `--gui-image`, or built inside the current OpenShift
-project.
-
-The GUI image installs the optional Tool Chest dependencies during build. Lilly
-Medchem Rules is built from vendored source under `gui/vendor/`, so the
-OpenShift build does not need to clone that external repository.
-
-## Fast Start
-
-Prerequisites:
-
-- Access to an OpenShift project.
-- The `oc` CLI installed and logged in with `oc login`.
-- This repository checked out locally.
-
-From the `gui/` folder:
+For the partner's clone-and-deploy procedure, start with
+`SITE_QUICKSTART.md`. The launcher uses the current `oc` project, three
+pinned prebuilt images, and real CPU OpenShift Jobs by default:
 
 ```bash
+cd gui
 ./openshift/deploy.sh
 ```
 
-On Windows PowerShell:
+The script creates the GUI Deployment, Service, Route, service account and Job
+RBAC, ConfigMap, and a persistent job-storage PVC. It waits for the GUI rollout
+and prints the Route. It does not install packages, start a build, or require a
+Docker socket. conDitar and DiffSMol run in separate engine images as
+OpenShift Jobs; generation and selected evaluations finish before Results are
+shown. The Vina preprocessing panel also runs in a Job using the conDitar
+image.
 
-```powershell
-.\openshift\deploy.ps1
-```
+The tested image references are in `image-list.txt`. They point to public
+Docker Hub images pinned by digest. No cross-project OpenShift image-pull role
+is needed. The cluster must be able to reach Docker Hub; otherwise, mirror all
+three images into a reachable registry and pass image overrides.
 
-To create or switch to a project first:
+## Overrides
 
-```bash
-./openshift/deploy.sh --create-project conditar-gui-demo
-```
-
-When the script finishes, it prints the HTTPS Route for the GUI.
-
-For a site-facing handoff path, start with
-`openshift/SITE_QUICKSTART.md`.
-
-## Prebuilt GUI Image Path
-
-If a GUI image has already been built and pushed to a registry the project can
-pull from, deploy it directly:
+From the repository root, pass registry-pullable images explicitly:
 
 ```bash
-./openshift/deploy.sh \
-  --project <site-project> \
-  --runtime openshift_job \
-  --submit \
-  --cpu \
-  --gui-image <site-conditar-gui-image> \
-  --runtime-image <site-conditar-runtime-image>
+./gui/openshift/deploy.sh --project <project> \
+  --gui-image <gui-image> \
+  --runtime-image <conditar-image> \
+  --diffsmol-image <diffsmol-image>
 ```
 
-This skips the OpenShift binary build, so the project does not need to download
-GUI build dependencies during deployment.
+The equivalent environment variables are `CONDITAR_GUI_IMAGE`,
+`CONDITAR_DOCKER_IMAGE`, and `DIFFSMOL_DOCKER_IMAGE`. Other supported settings
+are listed in `site.env.example` and `./openshift/deploy.sh --help`.
 
-To build that GUI image from a workstation or CI runner with Docker or Podman:
+- `--no-submit` writes Job manifests without submitting them.
+- `--runtime openshift_mock` runs synthetic infrastructure diagnostics.
+- `--cpu` forces CPU settings when overriding GPU environment variables.
+- `--gpu` configures one GPU per generator Job, subject to project quota and
+  the site's GPU resource key. The GUI pod itself remains CPU-only.
+- `--storage 50Gi` changes the PVC request at first creation. Resizing an
+  existing PVC depends on the storage class.
+- `--route-host HOST` requests a fixed hostname, if permitted by the cluster.
+- `--build-gui` opts into an OpenShift binary build and creates a BuildConfig
+  and ImageStream. This path downloads image-build dependencies inside the
+  builder; it is not required for partner deployment. `--build-gui --skip-build`
+  resumes after a completed build.
 
-```bash
-./openshift/build_gui_image.sh \
-  --image docker.io/osuninglab/conditar-gui:<site-version> \
-  --push
-```
+`--submit` is the default. The launcher rejects known outdated engine images
+in real-submission mode. The GUI image is built from `gui/Containerfile`; the
+conDitar and DiffSMol images are built independently using the instructions in
+`../../docker/conditar_dev/README.md` and `../../docker/diffsmol/README.md`.
 
-The build defaults to `linux/amd64`, which is the common OpenShift worker-node
-platform. Set `--platform` only if the site requires a different target.
+## Storage And Permissions
 
-## First Click Test
+Job files live at `/data/jobs` on the `conditar-gui-jobs` PVC. The default PVC
+uses `ReadWriteOnce`, so generated Jobs have required pod affinity to the GUI
+pod's node. The GUI Deployment uses a `Recreate` rollout to avoid simultaneous
+mounts during upgrades. The project must permit the GUI service account to
+create and monitor Jobs and read pod logs, and both the GUI and Job service
+accounts must be able to pull their images.
 
-1. Open the printed Route.
-2. In **Where should this run?**, choose **OpenShift Job** when submission is
-   enabled, or **OpenShift diagnostics** for a storage/logs-only check.
-3. Upload or choose input structures.
-4. Click **Generate molecules**.
-5. Open the completed job and load results.
+The Route has a 35-minute timeout for synchronous docking-panel preprocessing.
+Any external load balancer must permit an adequate request duration too.
+GPU execution requires a project with GPU quota and site-specific resource
+settings; CPU validation alone does not establish GPU readiness.
 
-The diagnostics target writes job metadata, logs, and a small mock SDF output to
-the persistent volume. It does not launch the conDitar runtime.
-
-## OpenShift Manifest-Only Test
-
-If `CONDITAR_OPENSHIFT_SUBMIT=false`, choose **OpenShift Job manifest** to write
-a Kubernetes `Job` manifest into each job's output folder without submitting it.
-This is meant to help site admins review the generator pod shape:
-
-- conDitar runtime image.
-- PVC mount and job paths.
-- GPU resource key/count.
-- CPU and memory requests.
-- conDitar command-line arguments.
-
-The artifact is named:
-
-```text
-outputs/conditar-openshift-job.yaml
-```
-
-## Real OpenShift Job Test
-
-If the project allows the GUI service account to create Jobs, redeploy with:
-
-```bash
-./openshift/deploy.sh --runtime openshift_job --submit
-```
-
-For CPU-only testing, use:
-
-```bash
-./openshift/deploy.sh --runtime openshift_job --submit --cpu
-```
-
-The `--cpu` option sets the generated conDitar command to `--device cpu` and
-sets `CONDITAR_OPENSHIFT_GPU_COUNT=0`, so the Job does not request a GPU.
-
-The GUI deployment uses a `Recreate` rollout strategy because the default PVC is
-`ReadWriteOnce`. This avoids briefly running two GUI pods that both try to mount
-the same job-storage volume during upgrades.
-
-## Common Options
-
-```bash
-./openshift/deploy.sh \
-  --runtime openshift_mock \
-  --runtime-image osuninglab/conditar-dev:2026-07-10 \
-  --gui-image registry.example.edu/conditar-gui:latest \
-  --storage 10Gi
-```
-
-Use `--runtime openshift_job` if the site should land on the OpenShift Job
-target by default instead of the diagnostics target.
-
-Use `--gui-image` when the GUI image is already available in a registry the
-project can pull from. This skips the OpenShift binary build.
-
-Use `--route-host name.apps.example.edu` only when the cluster allows fixed
-Route hostnames.
-
-Use `--skip-build` when the `conditar-gui:latest` ImageStreamTag already exists
-and only the manifests should be re-applied.
-
-## What Gets Created
-
-- `ImageStream/conditar-gui`
-- `BuildConfig/conditar-gui`
-- `ServiceAccount/conditar-gui`
-- `Role/conditar-gui-job-runner`
-- `RoleBinding/conditar-gui-job-runner`
-- `ConfigMap/conditar-gui-config`
-- `PersistentVolumeClaim/conditar-gui-jobs`
-- `Deployment/conditar-gui`
-- `Service/conditar-gui`
-- `Route/conditar-gui`
-
-The GUI pod stores job data at `/data/jobs`, backed by the PVC.
-
-## Site Settings
-
-See `site.env.example` for configurable environment variables. The most
-important ones are:
-
-- `CONDITAR_DOCKER_IMAGE`: conDitar generator image for OpenShift Jobs and
-  manifest-only checks.
-- `CONDITAR_OPENSHIFT_PVC`: PVC name mounted by generated Jobs.
-- `CONDITAR_OPENSHIFT_SUBMIT`: set to `true` to create Jobs from the GUI pod.
-- `CONDITAR_OPENSHIFT_DEVICE`: `cuda:0` for GPU clusters or `cpu` for CPU tests.
-- `CONDITAR_OPENSHIFT_GPU_RESOURCE`: GPU resource key, often `nvidia.com/gpu`.
-- `CONDITAR_OPENSHIFT_GPU_COUNT`: number of GPUs requested by generated Jobs.
-- `CONDITAR_OPENSHIFT_SERVICE_ACCOUNT`: optional service account for generated
-  Jobs.
-
-## Still To Confirm Before Real Execution
-
-- Whether the GUI is allowed to create Kubernetes Jobs in the site project.
-- Which service account and RBAC rules are allowed for job creation and status
-  polling.
-- Whether GPU resources are available and what resource key they use.
-- Whether the conDitar generator image is available from the project.
-- Whether the generator pod and GUI pod may share the same PVC.
-- Whether the production path should use OpenShift Jobs or continue to hand off
-  to Slurm.
+Use `VALIDATION_PROTOCOL.md` for the acceptance checks. Inspect a failed
+rollout or Job with `oc describe pod`, `oc get events`, and `oc logs` before
+changing resources or image references.

@@ -1,5 +1,7 @@
 FROM mambaorg/micromamba:1.5.8
 
+ARG GUI_INSTALL_DOCKER_CLI=0
+
 ENV HOST=0.0.0.0 \
     PORT=8080 \
     CONDITAR_JOB_ROOT=/data/jobs \
@@ -19,6 +21,12 @@ RUN apt-get update \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
+RUN if [ "$GUI_INSTALL_DOCKER_CLI" = "1" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends docker.io \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 USER $MAMBA_USER
 COPY --chown=$MAMBA_USER:$MAMBA_USER environment.yml /tmp/environment.yml
 RUN micromamba create -y -f /tmp/environment.yml \
@@ -26,6 +34,8 @@ RUN micromamba create -y -f /tmp/environment.yml \
 
 ENV CONDA_DEFAULT_ENV=conditar-gui-dev \
     PATH=/opt/conda/envs/conditar-gui-dev/bin:$PATH
+
+RUN medchem install-lilly --jobs 1
 
 USER root
 COPY vendor/Lilly-Medchem-Rules /opt/conditar-gui/.tool_chest/Lilly-Medchem-Rules
@@ -36,6 +46,8 @@ RUN make -C /opt/conditar-gui/.tool_chest/Lilly-Medchem-Rules \
 
 USER $MAMBA_USER
 COPY --chown=$MAMBA_USER:0 . /opt/conditar-gui
+
+RUN python -c 'from medchem.structural.lilly_demerits._lilly import find_lilly_binaries; find_lilly_binaries()'
 
 USER root
 RUN chmod -R g=u /opt/conditar-gui

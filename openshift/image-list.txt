@@ -1,15 +1,8 @@
-# Container images used by this release.
+# Pinned images used by the no-argument OpenShift launcher.
+# This file is sourced by deploy.sh. Keep it to shell assignments and comments.
+# Published as gui-dev-20261005 and pinned by digest so later tag changes
+# cannot silently change a deployment. The cluster must be able to pull Docker Hub.
 
-# GUI image
-# Preferred: prebuilt from gui/Containerfile and hosted in an approved registry.
-# Example public image:
-docker.io/osuninglab/conditar-gui:<site-version>
-
-# Example mirrored GUI image reference:
-image-registry.openshift-image-registry.svc:5000/<site-project>/conditar-gui:<site-version>
-
-# conDitar runtime image
-docker.io/osuninglab/conditar-dev:2026-07-10
-
-# Example mirrored runtime image reference
-image-registry.openshift-image-registry.svc:5000/<site-project>/conditar-runtime:2026-07-10
+GUI=docker.io/osuninglab/conditar-dev-gui@sha256:26fd24a96881a4cde51d55fff3dfcfa4f4f42fcf69c96edbfb2a706fc521a8d8
+CONDITAR=docker.io/osuninglab/conditar-dev@sha256:c09c251a6e4c751b79eb0b455d9f89d9509224ddb66d734a99b220d896ff8033
+DIFFSMOL=docker.io/osuninglab/diffsmol@sha256:6e66d686944a0a963d8d11da3d3008423cfc5ac1098059eea9bd592e0f3fed01
