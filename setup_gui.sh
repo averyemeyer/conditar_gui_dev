@@ -63,8 +63,8 @@ if command -v "$DOCKER_COMMAND" >/dev/null 2>&1; then
     echo "OK    conDitar image found: $IMAGE"
   else
     echo "MISS  conDitar image not found: $IMAGE"
-    echo "      Build the refreshed standalone image:"
-    echo "        docker build --platform linux/amd64 -f ../docker/conditar_dev/Refresh.Dockerfile -t $DEFAULT_IMAGE ../scripts"
+    echo "      Pull the published image in openshift/image-list.txt and set CONDITAR_DOCKER_IMAGE,"
+    echo "      or build the standalone image from the conDitar source repository."
     missing=1
   fi
 

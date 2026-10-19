@@ -2,22 +2,22 @@
 
 A lightweight browser GUI for running conDitar molecular generation jobs.
 
-This folder contains the conDitar browser GUI. It stages user-selected PDB/SDF
+This repository contains the conDitar browser GUI. It stages user-selected PDB/SDF
 inputs, launches conDitar jobs through the container image built from
 `conDitar-dev`, tracks job status, and reads generated SDF outputs.
 
-The generator, container, and GUI are documented separately:
-
-- [`../README.md`](../README.md) — model, sampling, and repository overview.
-- [`../docker/conditar_dev/README.md`](../docker/conditar_dev/README.md) — image build, Docker/Podman
-  usage, and container-only runs.
+Container recipes and published image references are documented in
+[`docker/README.md`](docker/README.md) and
+[`openshift/image-list.txt`](openshift/image-list.txt). The conDitar model and
+its image build context remain in the
+[conDitar source repository](https://github.com/ninglab/conDitar-dev/tree/gui-dev).
 
 ![conDitar GUI overview](media/screenshots/gui-overview.png)
 
 ## Architecture overview
 
 ```text
-conDitar-dev/gui
+This repository
   Browser GUI + Python backend
   Starts jobs, tracks logs/status, reads generated SDF outputs
 
@@ -27,7 +27,7 @@ conDitar-dev container/source
 
 DiffSMol container
   Standalone shape generation and selected chemistry/docking evaluations
-  Build instructions: ../docker/diffsmol/README.md
+  Build instructions: docker/diffsmol/README.md
 ```
 
 Typical local CPU flow:
@@ -55,8 +55,8 @@ image on local CPU, Slurm GPU, or OpenShift. The GUI waits for both stages to
 finish before exposing results. Slurm can load a separate DiffSMol archive with
 `DIFFSMOL_DOCKER_TAR`; otherwise preload/pull the image on compute nodes.
 The refreshed standalone conDitar image is `conditar-dev:standalone-20261001`
-locally. Build it with the command in `../docker/conditar_dev/README.md`, or set
-`CONDITAR_DOCKER_IMAGE` to a registry copy. The GUI no longer injects conDitar
+locally. Build it from the conDitar source repository, or set
+`CONDITAR_DOCKER_IMAGE` to a published registry image. The GUI no longer injects conDitar
 scripts from its checkout; generation and selected evaluations finish in the
 same conDitar container on local CPU, Slurm GPU, or OpenShift.
 
@@ -65,12 +65,12 @@ same conDitar container on local CPU, Slurm GPU, or OpenShift.
 For first-time local CPU setup with Docker or Docker Desktop:
 
 ```bash
-docker pull osuninglab/conditar-dev:2026-07-10
-git clone https://github.com/ninglab/conDitar-dev.git
-cd conDitar-dev
-docker build --platform linux/amd64 -f docker/conditar_dev/Refresh.Dockerfile \
-  -t conditar-dev:standalone-20261001 scripts
-cd gui
+git clone --branch gui-dev https://github.com/averyemeyer/conditar_gui_dev.git
+cd conditar_gui_dev
+. openshift/image-list.txt
+docker pull "$CONDITAR"
+docker pull "$DIFFSMOL"
+export CONDITAR_DOCKER_IMAGE="$CONDITAR" DIFFSMOL_DOCKER_IMAGE="$DIFFSMOL"
 ./setup_gui.sh
 ./start_cpu_gui.sh
 ```
@@ -78,10 +78,11 @@ cd gui
 The launcher normally opens `http://127.0.0.1:4173`. If that port is busy, it
 automatically tries the next available port and prints the URL to use.
 
-After this first setup check succeeds, future local CPU sessions usually only
-need:
+For later sessions, set the image references again before starting:
 
 ```bash
+. openshift/image-list.txt
+export CONDITAR_DOCKER_IMAGE="$CONDITAR" DIFFSMOL_DOCKER_IMAGE="$DIFFSMOL"
 ./start_cpu_gui.sh
 ```
 
@@ -95,7 +96,8 @@ Requirements:
 - Git
 - Python 3.9 or newer
 - Docker Desktop
-- The refreshed conDitar image `conditar-dev:standalone-20261001`
+- The published conDitar image listed in `openshift/image-list.txt`, or a
+  locally built standalone image
 
 Linux, macOS, and Windows through WSL2 are supported for local GUI use. On
 Windows, run the shell scripts from WSL2, not native PowerShell. Install Docker
@@ -114,12 +116,12 @@ from Finder after Docker Desktop is installed and running.
 5. Run the same local CPU commands:
 
    ```bash
-   docker pull osuninglab/conditar-dev:2026-07-10
-   git clone https://github.com/ninglab/conDitar-dev.git
-   cd conDitar-dev
-   docker build --platform linux/amd64 -f docker/conditar_dev/Refresh.Dockerfile \
-     -t conditar-dev:standalone-20261001 scripts
-   cd gui
+   git clone --branch gui-dev https://github.com/averyemeyer/conditar_gui_dev.git
+   cd conditar_gui_dev
+   . openshift/image-list.txt
+   docker pull "$CONDITAR"
+   docker pull "$DIFFSMOL"
+   export CONDITAR_DOCKER_IMAGE="$CONDITAR" DIFFSMOL_DOCKER_IMAGE="$DIFFSMOL"
    ./setup_gui.sh
    ./start_cpu_gui.sh
    ```

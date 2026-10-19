@@ -1,0 +1,11 @@
+ARG QVINA_SOURCE_IMAGE=docker.io/osuninglab/conditar-dev@sha256:6aeefd55b3d7797218fa33ded7ee12278df42c17914edf10ab5c98dec230dafe
+ARG DIFFSMOL_BASE_IMAGE=docker.io/osuninglab/diffsmol@sha256:6e66d686944a0a963d8d11da3d3008423cfc5ac1098059eea9bd592e0f3fed01
+FROM ${QVINA_SOURCE_IMAGE} AS qvina_source
+
+FROM ${DIFFSMOL_BASE_IMAGE}
+
+USER root
+COPY --from=qvina_source /opt/conditar/qvina/qvina2.1 /usr/local/bin/qvina2.1
+COPY runtime/pocket_generate.py runtime/postprocess.py runtime/run.py /opt/DiffSMol/docker/
+RUN chmod 0755 /usr/local/bin/qvina2.1
+USER mambauser
